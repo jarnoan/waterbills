@@ -11,8 +11,14 @@ The billed items include
 - water consumption fee
 - shared expenses (insurance, banking fees, other co-op costs)  
 
+Most customers are **active**, meaning they have a water meter and are actually consuming water.
+Some customers are not active; they are members of the co-op but are not connected to the water network.
+
+There is a main water meter that meters the total water consumption of the cooperative.
+
 The language used in the system is Finnish. This includes the CSV column titles,
 file names, bills, emails and even the command line options and help texts of the tool.
+The source code uses English terms.
 The currency used is Euro.
 
 ## Data
@@ -39,7 +45,7 @@ Organizing the files:
 The set of input files:
 - Customer List CSV (type: `osakkaat`)
     - name, address, email, phone
-    - meter ID
+    - meter ID (for active customers, empty if not active)
     - billing preference (email/paper)
     - when joined, when left (for the record)
     - property id (for the record)
@@ -56,35 +62,51 @@ The set of input files:
     - billing cycle beginning and end dates
     - due date
     - contact information
-- Customer Consumptions CSV (type: `kulutus`)
-    - previous meter reading and date, new meter reading and date, consumption
+    - main meter ID
+- Meter readings CSV (type: `lukemat`)
+    - customer name, date when reading was taken, the reading
+    - lists only customers who have provided the real reading + main meter
+    - name for main meter is `päämittari`
+    - in mid-cycle property owner change case the CSV would have a line only for the previous owner
+      (the new owner will be billed at regular cycle, from this reading onwards)
 
 The set of output files:
 - Customer Bills CSV (type: `laskut`)
-    - reference number, bill total
+    - previous meter reading and date, new meter reading and date, consumption, 
+      whether consumption is based on real reading or estimated (same as previous consumption)
+    - basic fee share, water cost, total due
 - Bill PDFs (type: `lasku`, note: `lastname-firstname`)
 - Paper Bill PDFs (type: `paperilaskut`)
-- Billing Summary
-    - Customers names, amound dues, due dates, reference numbers
+    - Contains Bill PDFs for customers who want a paper bill.
+- Summary PDF (type: `yhteenveto`)
+    - Customers names, amound dues, due dates, reference numbers.
+    - Total water usage as measured by the main water meter.
+    - Total water usage as summed from customer consumptions.
+    - The difference (loss) in cubic meters and as percentage of main water meter consumption.
 
 ## Usage
 
 The billing cycle run:
-1. Create new Customer List CSV if there are changes.
-2. Create new Bill Lines CSV if there are changes.
-3. Create new General Information CSV.
-4. Create new Customer Consumptions CSV.
-5. Run the tool to produce Customer Bills CSV.
-    - By default the tool uses the same consumption as in the previous billing cycle.
-5. Check that the Customer Bills CSV looks correct, update if needed.
-6. Run the tool to produce Bill PDFs.
+1. User creates a new Customer List CSV if there are changes.
+2. User creates a new Bill Lines CSV if there are changes.
+3. User creates a new General Information CSV.
+4. User creates new Meter Readings CSV.
+5. User runs the tool to produce Customer Bills CSV.
+    - If a new reading is present in Meter Readings CSV, the tool uses that.
+    - If not, the tool estimates the consumption by using the same consumption as in the previous bill.
+5. User checks that the Customer Bills CSV looks correct, updates if needed.
+6. User runs the tool to produce Bill PDFs.
     - The PDFs should look like standard Finnish bills with bar code and virtual bar code.
-7. Check that the Bill PDFs look correct.
-8. Run the tool to publish the bills.
-    - Produce Paper Bill PDFs file containing the bills for customers who want a paper bill.
+7. User checks that the Bill PDFs look correct.
+8. User runs the tool to publish the bills.
+    - The tool produces Paper Bill PDFs file containing the bills for customers who want a paper bill.
     - Send the bills by email for customers who want the bill by email.
         - Emails should include the PDF as an attachment, and the main details (total, due date, bank account, virtual bar code) as plain text.
     - Send a billing summary to the treasurer by email.
+
+Before the very first run user creates an initial Customer Bills CSV and Meter Readings CSV to be used as a seed.
+
+SMTP server address and authentication information are provided in .env file.
 
 ## Future development
 
