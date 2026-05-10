@@ -38,12 +38,17 @@ Organizing the files:
 
 The set of input files:
 - Customer List CSV (type: `osakkaat`)
-    - name, address, email, meter ID, billing preference (email/paper), when joined, when left, property id, number of persons
+    - name, address, email, phone
+    - meter ID
+    - billing preference (email/paper)
+    - when joined, when left (for the record)
+    - property id (for the record)
+    - number of persons (for authority reporting)
 - Bill Lines CSV (type: `laskurivit`)
     - title
     - amount
     - VAT percentage
-    - how to apply:
+    - how to apply (shared ones rounded up to next cent):
         - shared by all active customers (main meter basic fee)
         - shared by all customers (insurance, banking fees, other expenses)
         - multiplied by water consumption (water price per cubic meter)
@@ -51,26 +56,32 @@ The set of input files:
     - billing cycle beginning and end dates
     - due date
     - contact information
+- Customer Consumptions CSV (type: `kulutus`)
+    - previous meter reading and date, new meter reading and date, consumption
 
 The set of output files:
 - Customer Bills CSV (type: `laskut`)
-    - previous meter reading and date, new meter reading and date, consumption, reference number, bill total
+    - reference number, bill total
 - Bill PDFs (type: `lasku`, note: `lastname-firstname`)
+- Paper Bill PDFs (type: `paperilaskut`)
+- Billing Summary
+    - Customers names, amound dues, due dates, reference numbers
 
 ## Usage
 
-A billing cycle run:
-1. Create new customer list CSV if there are changes.
-2. Create new bill lines CSV if there are changes.
-3. Create new general information CSV.
-4. Run the tool to produce customer bills CSV.
+The billing cycle run:
+1. Create new Customer List CSV if there are changes.
+2. Create new Bill Lines CSV if there are changes.
+3. Create new General Information CSV.
+4. Create new Customer Consumptions CSV.
+5. Run the tool to produce Customer Bills CSV.
     - By default the tool uses the same consumption as in the previous billing cycle.
-5. Check that the customer bills CSV looks correct, update if needed.
-6. Run the tool to produce bill PDFs.
+5. Check that the Customer Bills CSV looks correct, update if needed.
+6. Run the tool to produce Bill PDFs.
     - The PDFs should look like standard Finnish bills with bar code and virtual bar code.
-7. Check that the bill PDFs look correct.
+7. Check that the Bill PDFs look correct.
 8. Run the tool to publish the bills.
-    - Print the bills for customers who want a paper bill.
+    - Produce Paper Bill PDFs file containing the bills for customers who want a paper bill.
     - Send the bills by email for customers who want the bill by email.
         - Emails should include the PDF as an attachment, and the main details (total, due date, bank account, virtual bar code) as plain text.
     - Send a billing summary to the treasurer by email.
@@ -86,7 +97,7 @@ run the tool and check output files.
 
 The water meters are owned and maintained by a municipal utility, who uses them for billing for the waste water.
 They don't currently have a web portal where we could get the meter readings, 
-but once they do, the tool should fetch the readings from there.
+but once they do, the tool should fetch the readings from there to produce Customer Consumption CSV.
 
 ### Web usage
 
@@ -102,3 +113,6 @@ and report the status.
 
 The tool could use some banking API to generate E-bills.
 
+### Authority reporting
+
+The tool could produce a report with data required by authorities annually.
