@@ -12,7 +12,7 @@ The billed items include
 - shared expenses (insurance, banking fees, other co-op costs)  
 
 Most customers are **active**, meaning they have a water meter and are actually consuming water.
-Some customers are not active; they are members of the co-op but are not connected to the water network.
+Some customers are not active (currently only one); they are members of the co-op but are not connected to the water network.
 
 There is a main water meter that meters the total water consumption of the cooperative.
 
@@ -50,6 +50,7 @@ The set of input files:
     - when joined, when left (for the record)
     - property id (for the record)
     - number of persons (for authority reporting)
+    - This includes both active and inactive customers.
 - Bill Lines CSV (type: `laskurivit`)
     - title
     - amount
@@ -75,14 +76,16 @@ The set of output files:
     - previous meter reading and date, new meter reading and date, consumption, 
       whether consumption is based on real reading or estimated (same as previous consumption)
     - basic fee share, water cost, total due
+    - bill number (global increasing counter), bank reference number computed from bill number
 - Bill PDFs (type: `lasku`, note: `lastname-firstname`)
 - Paper Bill PDFs (type: `paperilaskut`)
     - Contains Bill PDFs for customers who want a paper bill.
 - Summary PDF (type: `yhteenveto`)
-    - Customers names, amound dues, due dates, reference numbers.
-    - Total water usage as measured by the main water meter.
-    - Total water usage as summed from customer consumptions.
-    - The difference (loss) in cubic meters and as percentage of main water meter consumption.
+    - Customers names, amound dues, due dates, reference numbers as a table.
+    - Total water usage data as a table:
+        - As measured by the main water meter.
+        - As summed from customer consumptions.
+        - The difference (loss) in cubic meters and as percentage of main water meter consumption.
 
 ## Usage
 
@@ -100,11 +103,27 @@ The billing cycle run:
 7. User checks that the Bill PDFs look correct.
 8. User runs the tool to publish the bills.
     - The tool produces Paper Bill PDFs file containing the bills for customers who want a paper bill.
-    - Send the bills by email for customers who want the bill by email.
+    - The tool sends the bills by email for customers who want the bill by email.
         - Emails should include the PDF as an attachment, and the main details (total, due date, bank account, virtual bar code) as plain text.
-    - Send a billing summary to the treasurer by email.
+    - The tool sends the Summary PDF to the treasurer by email as an attachment.
+
+### Property owner changing mid-cycle
+
+Meter Readings CSV contains mid-cycle reading for the old owner.
+It can also contain end-of-cycle reading for the new owner.
+If it does not contain end-of-cycle reading for the new owner, 
+the consumption of the old owner from the previous cycle is used as an estimate.
+
+### Initial seeding
 
 Before the very first run user creates an initial Customer Bills CSV and Meter Readings CSV to be used as a seed.
+
+The initial Meter Readings CSV contains the main meter reading.
+
+The initial Customer Bills CSV contains also bill numbers and bank reference numbers, 
+so that the tool can use the largest bill number as a base for the first run.
+
+### Configuration
 
 SMTP server address and authentication information are provided in .env file.
 
