@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "water-billing"
+version = "0.1.0"
+description = "Vesiosuuskunnan laskutustyökalu"
+requires-python = ">=3.9"
+dependencies = [
+    "typer>=0.12",
+    "reportlab>=4.2",
+    "python-barcode>=0.15",
+    "Pillow>=10",
+    "pypdf>=4",
+    "python-dotenv>=1.0",
+]
+
+[project.scripts]
+laskutus = "water_billing.cli.commands:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["water_billing*"]
