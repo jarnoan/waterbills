@@ -2,7 +2,7 @@
 
 ## Requirements
 
-Implement a Finnish-language command-line tool that automates the complete billing workflow for a small water utility cooperative (~20 customers): ingest meter readings and configuration CSVs, compute per-customer water consumption and bill amounts, generate Finnish-standard bill PDFs with barcodes and virtual barcodes, email bills to customers, and produce a merged paper-bill PDF and treasurer billing summary. All user-facing text (CLI option names, help strings, CSV column headers, PDF content, email subject/body) must be in Finnish; source code identifiers in English. Data lives in CSV files on a local filesystem mounted from Google Drive.
+Implement a Finnish-language command-line tool that automates the complete billing workflow for a small water utility cooperative (~20 customers): ingest meter readings and configuration CSVs, compute per-customer water consumption and bill amounts, generate Finnish-standard bill PDFs with barcodes and virtual barcodes, email bills to customers, and produce a merged paper-bill PDF and treasurer billing summary. All user-facing text (CLI option names, help strings, CSV column headers, PDF content, email subject/body) must be in Finnish; source code identifiers in English. Data lives in CSV files on a local filesystem mounted from Google Drive. The project must include a Finnish-language `README.md` covering the billing workflow, all CSV file formats with column specifications, `.env` setup instructions, and cold-start seeding requirements. A fifth subcommand `uusi` must provide an interactive terminal wizard that guides the user through a complete billing cycle end-to-end: collecting and validating all required input files, generating the bills CSV, reviewing computed values, generating PDFs, and publishing — handling both first-run seeding and regular cycle setup.
 
 ## Entities
 
@@ -12,7 +12,9 @@ direction TB
 
 class Customer {
     +String name
-    +String address
+    +String streetAddress
+    +String postalCode
+    +String city
     +String email
     +String phone
     +String meterId
@@ -21,6 +23,8 @@ class Customer {
     +Optional~Date~ leftDate
     +String propertyId
     +int numberOfPersons
+    +Optional~String~ bankAccount
+    +Optional~String~ consumptionPoint
     +isActive() bool
 }
 
@@ -125,19 +129,21 @@ BillingSummary "1" -- "0..*" Bill : aggregates
 ## Approach
 
 1. CLI Architecture:
-   - Use `typer` for Finnish-language CLI with three subcommands: `lasku` (generate bills CSV), `pdf` (generate bill PDFs), `julkaise` (publish — paper PDF + customer emails + yhteenveto PDF to treasurer)
-   - Each subcommand accepts `--vuosi` (year) and `--data-hakemisto` (data root path) to locate input files
+   - Use `typer` for Finnish-language CLI with four subcommands: `lasku` (generate bills CSV), `pdf` (generate bill PDFs), `julkaise` (publish — paper PDF + customer emails + yhteenveto PDF to treasurer), `uusi` (interactive wizard — full cycle setup through publish in one guided session)
+   - Each subcommand accepts `--vuosi` (year), `--kuukausi` (two-digit month of cycle end), and `--data-hakemisto` (data root path); together `--vuosi` and `--kuukausi` identify the billing run folder `<data_root>/<year>/<year>-<MM>/`
    - `julkaise` additionally requires SMTP credentials from `.env`; fail early with Finnish error if missing
    - Load `.env` via `python-dotenv` at startup
 
 2. File Discovery:
-   - Year folders under configurable data root; output files written to the cycle end year's folder
-   - For each input type (`osakkaat`, `laskurivit`, `yleiset`, `lukemat`): glob `*-{type}-*.csv` in year folder, parse `YYYYMMDD` date prefix, filter to dates ≤ cycle date, sort descending, use first match
-   - `lukemat` for current cycle is required; `laskut` from previous cycle (or seed) is required as ledger
-   - Search previous year folder if current year yields no `laskut` result
+   - Data root contains year folders; each year folder contains run subfolders named `<year>-<MM>` (e.g., `2026/2026-02/`); all files for a billing run reside in its run subfolder
+   - Current run folder = `<data_root>/<year>/<year>-<MM>/` derived from `--vuosi` and `--kuukausi`; output files written to this folder
+   - For fallback input types (`osakkaat`, `laskurivit`): search current run folder first; if not found, iterate all run subfolders in the same year and then the previous year, sorted by folder name descending (`<year>-<MM>` lexicographic order), return first folder that contains a matching `*-{type}-*.csv` file; within that folder pick the file with the latest date prefix ≤ cycle end date
+   - `yleiset` uses cascade merge: collect all `*-yleiset-*.csv` files from current run folder and all preceding run folders (current year then previous year, descending by folder name); read each in order most-recent-first; merge key-value pairs with first occurrence of each key winning; validate all required keys present after merge
+   - `lukemat` for current run is required in the current run folder; most recent previous `lukemat` is found by searching all earlier run subfolders (current year then previous year, descending); second most recent `lukemat` loaded if available for estimated consumption fallback
+   - `laskut` files are pure outputs; bill number counter initialised by scanning all `laskut` files across all run subfolders in all year folders; start from 1 if none exist
 
 3. Consumption Computation:
-   - For each active customer: look up name in current `lukemat`; if found compute `new_reading − prev_reading` (prev from latest `laskut`); if absent copy previous consumption and flag `is_estimated = True`
+   - For each active customer: look up name in current `lukemat`; if found compute `new_reading − prev_reading` where `prev_reading` comes from the most recent previous `lukemat`; if absent estimate consumption as `prev_reading − prev_prev_reading` (from the two most recent previous `lukemat` files) and flag `is_estimated = True`; if no `prev_prev` reading available emit a Finnish warning and use 0
    - Main meter consumption: current `päämittari` reading (from current `lukemat`) − previous `päämittari` reading (from most recent previous `lukemat` file)
 
 4. Bill Line Distribution:
@@ -177,7 +183,7 @@ BillingSummary "1" -- "0..*" Bill : aggregates
 3. `MeterReadingCsvReader` implements `CsvReader[MeterReading]`
 4. `BillLineCsvReader` implements `CsvReader[BillLine]`
 5. `GeneralInfoCsvReader` implements `CsvReader[GeneralInfo]`
-6. `PreviousBillCsvReader` implements `CsvReader[Bill]`
+6. `BillNumberReader` — `read_bill_numbers(path: Path) -> List[int]`; reads only `laskunumero` column from any `laskut` CSV file
 7. `BillCsvWriter` — `write(path: Path, bills: List[Bill]) -> None`
 8. `BillingError(Exception)` — Finnish user-facing error messages, exit code 1
 
@@ -185,10 +191,11 @@ BillingSummary "1" -- "0..*" Bill : aggregates
 1. `lasku` command → `FileDiscovery` → `InputValidator` → `ConsumptionEngine` → `BillDistributionEngine` → `BillCsvWriter`
 2. `pdf` command → `FileDiscovery` → `BillPdfRenderer` → individual PDF files in year folder
 3. `julkaise` command → `FileDiscovery` → `PaperBillsMerger` + `SummaryPdfRenderer` + `EmailSender`
-4. `ReferenceNumber` — pure function, no dependencies
-5. `VirtualBarcode` — pure function, depends on `ReferenceNumber` formatted output
-6. `EmailSender` depends on `smtplib` + `.env` config via `AppConfig`
-7. `ConsumptionEngine` depends on `PreviousBillCsvReader` + `MeterReadingCsvReader`
+4. `uusi` command → `CycleWizard` → orchestrates all of the above service layers interactively via `typer.prompt` / `typer.confirm`
+5. `ReferenceNumber` — pure function, no dependencies
+6. `VirtualBarcode` — pure function, depends on `ReferenceNumber` formatted output
+7. `EmailSender` depends on `smtplib` + `.env` config via `AppConfig`
+8. `ConsumptionEngine` depends on `MeterReadingCsvReader` for current and up to two previous `lukemat` files; `BillNumberReader` is used only to scan for the maximum bill number (optional — no file = start from 1)
 
 ### Layered Architecture
 1. CLI Layer: `cli/commands.py` — typer app, Finnish subcommand definitions, orchestration calls
@@ -229,6 +236,7 @@ tests/
   test_distribution.py
   test_consumption.py
 pyproject.toml
+README.md
 .env.example
 .gitignore
 ```
@@ -238,7 +246,7 @@ pyproject.toml
 ### Create Domain Models — `domain/models.py`
 1. Responsibility: Define all business entities as frozen Python dataclasses using `decimal.Decimal` for all monetary and meter reading values
 2. Entities to define:
-   - `Customer`: name: str, address: str, email: str, phone: str, meter_id: str, billing_preference: str, joined_date: date, left_date: Optional[date], property_id: str, number_of_persons: int; method `is_active() -> bool` returns `bool(self.meter_id.strip())`
+   - `Customer`: name: str, street_address: str, postal_code: str, city: str, email: str, phone: str, meter_id: str, billing_preference: str, joined_date: date, left_date: Optional[date], property_id: str, number_of_persons: int, bank_account: Optional[str], consumption_point: Optional[str]; method `is_active() -> bool` returns `bool(self.meter_id.strip())`; `bank_account` and `consumption_point` are stored but not used in any billing logic
    - `BillingCycle`: start_date: date, end_date: date, due_date: date
    - `ContactInfo`: cooperative_name: str, iban: str, y_tunnus: str, contact_person: str, phone: str, email: str, main_meter_id: str
    - `GeneralInfo`: billing_cycle: BillingCycle, contact_info: ContactInfo
@@ -294,35 +302,49 @@ pyproject.toml
 ### Implement File Discovery — `io/file_discovery.py`
 1. `parse_date_prefix(filename: str) -> Optional[date]`:
    - Logic: try parsing first 8 chars as `%Y%m%d`; return date or None on failure
-2. `find_latest_file(data_root: Path, year: int, file_type: str, at_or_before: date) -> Optional[Path]`:
-   - Logic: year_dir = data_root / str(year); glob f"*-{file_type}-*.csv"; filter by parsed date ≤ at_or_before; sort by date descending; return first Path or None
-3. `require_file(data_root: Path, year: int, file_type: str, at_or_before: date) -> Path`:
-   - Wrap find_latest_file; raise `BillingError(f"Tiedostoa tyyppiä '{file_type}' ei löydy vuodelta {year}")` if None
-4. `find_previous_laskut(data_root: Path, current_year: int, before_date: date) -> Path`:
-   - Search current year folder for laskut files with date < before_date; if none, search current_year − 1; raise BillingError if still none
-5. `find_previous_lukemat(data_root: Path, current_year: int, before_date: date) -> Optional[Path]`:
-   - Same logic as above but returns None instead of raising (missing prev lukemat = no water loss data)
-6. `output_path(data_root: Path, cycle_end_date: date, file_type: str, note: str, extension: str) -> Path`:
-   - Return `data_root / str(cycle_end_date.year) / f"{cycle_end_date.strftime('%Y%m%d')}-{file_type}-{note}.{extension}"`
+2. `run_folder(data_root: Path, year: int, month: int) -> Path`:
+   - Return `data_root / str(year) / f"{year}-{month:02d}"`
+3. `list_run_folders(data_root: Path, year: int) -> List[Path]`:
+   - List all subdirectories of `data_root / str(year)` matching pattern `<year>-<MM>`; sort descending by name; return list (may be empty)
+4. `find_with_fallback(data_root: Path, current_run: Path, year: int, file_type: str, at_or_before: date) -> Path`:
+   - Search current_run for `*-{file_type}-*.csv` with date ≤ at_or_before; if found return it
+   - If not found: iterate `list_run_folders(year)` excluding current_run descending, then `list_run_folders(year − 1)` descending; for each folder search `*-{file_type}-*.csv` with date ≤ at_or_before; return first match
+   - Raise `BillingError(f"Tiedostoa tyyppiä '{file_type}' ei löydy")` if no match found anywhere
+5. `find_all_yleiset(data_root: Path, current_run: Path, year: int) -> List[Path]`:
+   - Collect all run folders from `list_run_folders(year)` and `list_run_folders(year − 1)`, with current_run first; sort remaining folders descending by name
+   - For each folder find all `*-yleiset-*.csv` files, sorted by date prefix descending; append to result list
+   - Return full ordered list (most recent first); may be empty — caller raises error if no yleiset files found at all
+6. `find_all_laskut(data_root: Path) -> List[Path]`:
+   - Glob all `<year>/<year>-<MM>` run subfolders under data_root; collect all `*-laskut-*.csv` files; return full list (may be empty — caller starts bill counter from 1 if empty)
+6. `find_previous_lukemats(data_root: Path, current_year: int, current_month: int, before_date: date) -> List[Path]`:
+   - Collect all run folders from `list_run_folders(current_year)` and `list_run_folders(current_year − 1)`, excluding the current run folder `<current_year>-<current_month:02d>`, sorted descending by folder name
+   - For each folder find `*-lukemat-*.csv` files with date < before_date; collect the latest per folder; return up to 2 paths (index 0 = most recent prev, index 1 = prev_prev)
+   - Raise `BillingError("Ei aikaisempia lukematietoja löydy")` if result is empty
+7. `output_path(run_dir: Path, cycle_end_date: date, file_type: str, note: str, extension: str) -> Path`:
+   - Return `run_dir / f"{cycle_end_date.strftime('%Y%m%d')}-{file_type}-{note}.{extension}"`
 
 ### Implement CSV Readers — `io/csv_readers.py`
 1. All readers: `open(path, encoding='utf-8-sig', newline='')` + `csv.DictReader`
 2. `read_customers(path: Path) -> List[Customer]`:
-   - Finnish column names: `nimi`, `osoite`, `sähköposti`, `puhelin`, `mittarinro`, `laskutustapa`, `liittynyt`, `lähtenyt`, `kiinteistötunnus`, `henkilömäärä`
+   - Finnish column names: `nimi`, `katuosoite`, `postinumero`, `postitoimipaikka`, `sähköposti`, `puhelin`, `mittarinro`, `laskutustapa`, `liittynyt`, `lähtenyt`, `kiinteistötunnus`, `henkilömäärä`, `tilinumero`, `kulutuspiste`
    - meter_id may be empty string (inactive customer)
    - Parse dates with `date.fromisoformat()`; lähtenyt is optional (empty string → None)
+   - `tilinumero` and `kulutuspiste` read and stored as-is; empty string stored as None; not used in any billing computation
 3. `read_bill_lines(path: Path) -> List[BillLine]`:
    - Finnish column names: `nimike`, `summa`, `alv_prosentti`, `soveltamistapa`
    - Parse `soveltamistapa` → `ApplicationRule` enum value; raise `BillingError` on unknown value
-4. `read_general_info(path: Path) -> GeneralInfo`:
-   - Finnish column names: `jakso_alkaa`, `jakso_loppuu`, `eräpäivä`, `osuuskunnan_nimi`, `iban`, `y_tunnus`, `yhteyshenkilö`, `puhelin`, `sähköposti`, `päämittarinro`
-   - Single data row; parse all dates
+4. `read_general_info(yleiset_paths: List[Path]) -> GeneralInfo`:
+   - Each file has two columns: `avain` (key) and `arvo` (value); one row per setting
+   - Process files in order (most recent first); build merged dict where first occurrence of each key wins
+   - Required keys: `jakso_alkaa`, `jakso_loppuu`, `eräpäivä`, `osuuskunnan_nimi`, `iban`, `y_tunnus`, `yhteyshenkilö`, `puhelin`, `sähköposti`, `päämittarinro`
+   - Raise `BillingError` listing any missing keys if not all required keys present after merge
+   - Parse date values with `date.fromisoformat()`; construct and return `GeneralInfo`
+   - If `yleiset_paths` is empty: raise `BillingError("Yleiset-tiedostoa ei löydy")`
 5. `read_meter_readings(path: Path) -> List[MeterReading]`:
    - Finnish column names: `nimi`, `päivämäärä`, `lukema`
    - Parse `lukema` as `int(row['lukema'])`; include `päämittari` row without filtering
-6. `read_previous_bills(path: Path) -> List[Bill]`:
-   - Finnish column names: `laskunumero`, `nimi`, `mittarinro`, `ed_lukema`, `ed_lukema_pvm`, `uusi_lukema`, `uusi_lukema_pvm`, `kulutus`, `arvio`, `perusmaksu_osuus`, `vesimaksu`, `yhteiskustannukset`, `yhteensä`, `viitenumero`
-   - Parse meter reading fields (`ed_lukema`, `uusi_lukema`, `kulutus`) as `int`; parse monetary fields as `Decimal(row['field'])`; parse bool from `arvio` column (`"kyllä"/"ei"` or `"1"/"0"`)
+6. `read_bill_numbers(path: Path) -> List[int]`:
+   - Open file with `encoding='utf-8-sig'`; read only the `laskunumero` column via `csv.DictReader`; return list of parsed integers; skip rows where the column is absent or unparseable
 
 ### Implement Bill CSV Writer — `io/csv_writers.py`
 1. `write_bills(path: Path, bills: List[Bill]) -> None`:
@@ -333,15 +355,15 @@ pyproject.toml
    - Raise `BillingError` with Finnish message if output path already exists (unless `--ylikirjoita` flag set)
 
 ### Implement Consumption Engine — `services/billing.py`
-1. `compute_consumptions(customers: List[Customer], current_readings: List[MeterReading], previous_bills: List[Bill], cycle_end_date: date) -> List[CustomerConsumption]`:
-   - Build lookup: `prev_by_name = {b.customer_name: b for b in previous_bills}`
-   - Build lookup: `reading_by_name = {r.customer_name: r for r in current_readings if r.customer_name != 'päämittari'}`
+1. `compute_consumptions(customers: List[Customer], current_readings: List[MeterReading], prev_readings: List[MeterReading], prev_prev_readings: List[MeterReading], cycle_end_date: date) -> List[CustomerConsumption]`:
+   - Build lookup: `current_by_name = {r.customer_name: r for r in current_readings if r.customer_name != 'päämittari'}`
+   - Build lookup: `prev_by_name = {r.customer_name: r for r in prev_readings if r.customer_name != 'päämittari'}`
+   - Build lookup: `prev_prev_by_name = {r.customer_name: r for r in prev_prev_readings if r.customer_name != 'päämittari'}`
    - For each active customer c:
-     - prev = prev_by_name.get(c.name); if None raise `BillingError(f"Ei edellisiä tietoja asiakkaalle: {c.name}")`
-     - If c.name in reading_by_name: new_reading = reading_by_name[c.name].reading; new_date = reading date; is_estimated = False
-     - Else: new_reading = prev.new_reading + prev.consumption; new_date = cycle_end_date; is_estimated = True
-     - consumption = new_reading − prev.new_reading
-     - Append CustomerConsumption(customer_name=c.name, meter_id=c.meter_id, prev_reading=prev.new_reading, prev_reading_date=prev.new_reading_date, new_reading=new_reading, new_reading_date=new_date, consumption=consumption, is_estimated=is_estimated)
+     - prev_r = prev_by_name.get(c.name); if None raise `BillingError(f"Ei edellisiä lukemia asiakkaalle: {c.name}")`
+     - If c.name in current_by_name: new_r = current_by_name[c.name]; is_estimated = False; consumption = new_r.reading − prev_r.reading; new_reading = new_r.reading; new_date = new_r.reading_date
+     - Else: is_estimated = True; new_date = cycle_end_date; if c.name in prev_prev_by_name: consumption = prev_r.reading − prev_prev_by_name[c.name].reading; else: consumption = 0; emit `typer.echo(f"Varoitus: ei kahta edellistä lukemaa, kulutus arvioidaan nollaksi: {c.name}", err=True)`; new_reading = prev_r.reading + consumption
+     - Append CustomerConsumption(customer_name=c.name, meter_id=c.meter_id, prev_reading=prev_r.reading, prev_reading_date=prev_r.reading_date, new_reading=new_reading, new_reading_date=new_date, consumption=consumption, is_estimated=is_estimated)
    - Return list
 
 2. `compute_main_meter_consumption(current_readings: List[MeterReading], prev_lukemat_path: Optional[Path]) -> Optional[Decimal]`:
@@ -350,8 +372,9 @@ pyproject.toml
    - Read prev lukemat; find 'päämittari' row; return current − previous
 
 ### Implement Bill Generation Engine — `services/billing.py`
-1. `get_next_bill_number(previous_bills: List[Bill]) -> int`:
-   - Return `max(b.bill_number for b in previous_bills) + 1`; raise `BillingError` if list empty
+1. `get_next_bill_number(all_laskut_paths: List[Path]) -> int`:
+   - If list empty: return 1
+   - For each path call `read_bill_numbers(path)`; collect all values; return `max(all_values) + 1`; if all files yield no parseable numbers, return 1
 
 2. `generate_bills(customers: List[Customer], consumptions: List[CustomerConsumption], bill_lines: List[BillLine], billing_cycle: BillingCycle, start_bill_number: int) -> List[Bill]`:
    - consumption_by_name: Dict[str, Decimal] = {c.customer_name: c.consumption for c in consumptions}
@@ -380,8 +403,8 @@ pyproject.toml
    - Create two Bill objects: prev_owner bill (basic_fee_share only, zero water_cost) and new_owner bill (prorated basic + full other charges)
 
 ### Implement Input Validation — `services/validation.py`
-1. `validate_inputs(customers, bill_lines, general_info, meter_readings, prev_bills) -> List[str]`:
-   - Warnings (non-fatal): active customer missing from prev_bills (new customer, no seed); 'päämittari' absent from meter_readings (yhteenveto water loss will be incomplete)
+1. `validate_inputs(customers, bill_lines, general_info, meter_readings, prev_readings, prev_prev_readings) -> List[str]`:
+   - Warnings (non-fatal): active customer missing from prev_readings (new customer, no reading in seed lukemat); active customer absent from current meter_readings and also absent from prev_prev_readings (estimated consumption will be zero); 'päämittari' absent from meter_readings (yhteenveto water loss will be incomplete)
    - Errors (fatal): no active customers; bill_lines empty; billing_cycle start ≥ end; IBAN fails format check (must be FI + 16 chars, 18 total)
    - Return list of Finnish message strings; caller prints warnings and raises BillingError for errors
 2. `validate_iban(iban: str) -> bool`:
@@ -400,7 +423,7 @@ pyproject.toml
 1. `render_bill_pdf(bill: Bill, general_info: GeneralInfo, customer: Customer, output_path: Path) -> None`:
    - Use `reportlab.platypus` with `SimpleDocTemplate` on A4
    - Header block: cooperative_name, contact person, phone, email
-   - Bill info block: bill number, customer name + address, billing period (Finnish date format dd.mm.yyyy), due date
+   - Bill info block: bill number, customer name + street address + postal code + city (each on own line), billing period (Finnish date format dd.mm.yyyy), due date
    - Line items table: columns `Nimike`, `Määrä/yks`, `ALV %`, `Summa (€)` — one row per bill line type; total row
    - Payment block: `Yhteensä`, `Eräpäivä`, `Tilinumero (IBAN)`, `Viitenumero` (formatted), `Virtuaaliviivakoodi` (full string in monospace)
    - Barcode: generate via `python-barcode` (Code 128); embed as image below payment block
@@ -438,22 +461,86 @@ pyproject.toml
 
 ### Create CLI Entry Point — `cli/commands.py`
 1. `app = typer.Typer(name="laskutus", help="Vesiosuuskunnan laskutustyökalu")` 
-2. `@app.command("lasku")` options: `--vuosi: int = current year`, `--data-hakemisto: Path`:
-   - Load config; discover files; read all inputs; validate (print warnings, raise on errors)
+2. `@app.command("lasku")` options: `--vuosi: int = current year`, `--kuukausi: int` (required, 1–12), `--data-hakemisto: Path`:
+   - Construct `run_dir = run_folder(data_root, vuosi, kuukausi)`; ensure run_dir exists (create if absent)
+   - Load config; discover files using `find_with_fallback` and `run_dir`; read all inputs including prev and prev_prev lukemat; scan all laskut files for bill number counter
+   - Validate (print warnings, raise on errors)
    - Detect ownership transfers; compute consumptions (with transfer handling)
-   - Generate bills; write laskut CSV to output_path
+   - Generate bills using `get_next_bill_number(all_laskut_paths)`; write laskut CSV to `output_path(run_dir, ...)`
    - Print: `"Laskut kirjoitettu: {path} ({n} laskua)"`
-3. `@app.command("pdf")` options: same:
-   - Read laskut CSV (current cycle output); read general_info + customers
-   - Render each customer's bill PDF; save to year folder
+3. `@app.command("pdf")` options: `--vuosi: int = current year`, `--kuukausi: int` (required), `--data-hakemisto: Path`:
+   - Construct `run_dir`; read laskut CSV from run_dir; read general_info + customers via `find_with_fallback`
+   - Render each customer's bill PDF; save to run_dir
    - Print per-customer progress; final count
-4. `@app.command("julkaise")` options: same:
-   - require_smtp_config; read all needed CSVs
-   - Render and save paperilaskut PDF for paper-preference customers (sorted alphabetically)
-   - Render and save yhteenveto PDF
+4. `@app.command("julkaise")` options: `--vuosi: int = current year`, `--kuukausi: int` (required), `--data-hakemisto: Path`:
+   - Construct `run_dir`; require_smtp_config; read all needed CSVs via `find_with_fallback`
+   - Render and save paperilaskut PDF for paper-preference customers (sorted alphabetically) to run_dir
+   - Render and save yhteenveto PDF to run_dir
    - send_all_bills; print succeeded/failed counts
    - send_summary_email to treasurer; print result
 5. `def main()`: `app()` entry point registered in pyproject.toml `[project.scripts]`
+
+### Implement uusi Wizard — `services/wizard.py` + `cli/commands.py`
+1. Add `@app.command("uusi")` with options `--vuosi: int = current year`, `--kuukausi: int` (required), `--data-hakemisto: Path` to `cli/commands.py`; it constructs `run_dir` and delegates to `run_cycle_wizard(config, run_dir, year, month)`
+2. Implement `run_cycle_wizard(config: AppConfig, run_dir: Path, year: int, month: int) -> None` in `services/wizard.py` with the following sequential phases; each phase uses `typer.echo` for output and `typer.prompt` / `typer.confirm` for input; Finnish text throughout:
+
+   **Phase 1 — yleiset**
+   - Call `find_all_yleiset(data_root, run_dir, year)` to get ordered list of existing yleiset files
+   - Attempt merge of all found files to build current values dict
+   - For each required key in canonical order (`jakso_alkaa`, `jakso_loppuu`, `eräpäivä`, `osuuskunnan_nimi`, `iban`, `y_tunnus`, `yhteyshenkilö`, `puhelin`, `sähköposti`, `päämittarinro`): display current value if present; prompt `"Muuta arvoa? (tyhjä = pidä nykyinen)"` — if user enters a non-empty string, use it; if key missing, prompt `"Anna arvo avaimelle {key}:"` (required, repeat until non-empty)
+   - If any value was changed or missing: write new yleiset CSV to current run folder with all key-value pairs; echo `"Yleiset-asetukset tallennettu."`
+   - Else: echo `"Yleiset-asetukset muuttumattomia, ei uutta tiedostoa."`
+   - Parse merged values into `GeneralInfo`
+
+   **Phase 2 — osakkaat**
+   - Attempt `find_with_fallback(data_root, run_dir, year, 'osakkaat', cycle_end_date)` — catch not-found
+   - If not found: write placeholder osakkaat CSV with header row only (`nimi,katuosoite,postinumero,postitoimipaikka,sähköposti,puhelin,mittarinro,laskutustapa,liittynyt,lähtenyt,kiinteistötunnus,henkilömäärä,tilinumero,kulutuspiste`) to current run folder; echo `"Osakkaat-tiedosto luotu: {path}. Täytä asiakastiedot tiedostoon ja käynnistä 'uusi' uudelleen."` ; return (exit wizard)
+   - If found: echo path; if `typer.confirm("Onko osakkaat-tiedostossa muutoksia?", default=False)`: echo `"Päivitä tiedosto ja käynnistä 'uusi' uudelleen."` ; return (exit wizard)
+   - Read customers from found file
+
+   **Phase 3 — lukemat**
+   - Echo `"Syötä mittarilukemat. Paina Enter ohittaaksesi asiakkaan (ei lukemaa tällä jaksolla)."`
+   - Sort active customers alphabetically; for each customer prompt `"Lukema – {c.name} (m³):"` ; if non-empty and parseable as int, collect as MeterReading with today's date; if empty, skip
+   - Prompt `"Päämittarin lukema (m³):"` ; if provided add MeterReading with name `päämittari`; if empty emit warning `"Varoitus: päämittarin lukema puuttuu — vesihäviö jää laskematta yhteenvedossa."`
+   - Write lukemat CSV to current run folder with collected readings; echo `"Lukemat tallennettu: {path}"`
+
+   **Phase 4 — laskurivit**
+   - Attempt `find_with_fallback` for `laskurivit`
+   - If not found: prompt `"Perusmaksu (€/asiakas):"` and `"Vesimaksu (€/m³):"` and `"ALV-%:"` for each; create laskurivit with two rows (PER_ACTIVE_CUSTOMER `Perusmaksu`, PER_CONSUMPTION `Vesimaksu`); write to current run folder; echo `"Peruslaskurivit luotu."`
+   - If found: echo `"Nykyiset laskurivit:"` followed by formatted table of bill lines (title, amount, VAT%, type)
+   - Loop: if `typer.confirm("Lisätäänkö uusi laskurivi?", default=False)`: prompt `"Nimike:"`, `"Summa (€):"`, `"ALV-%:"`, `"Soveltamistapa (aktiiviset/kaikki/kulutus):"` ; validate soveltamistapa; append to list; repeat loop
+   - If any new lines added: write new laskurivit CSV (existing lines + new lines) to current run folder
+
+   **Phase 5 — generate laskut and review**
+   - Run consumption and bill computation (same logic as `lasku` command) using the inputs collected above
+   - Print results table: one row per customer with name, consumption m³ (real/estimated flag), basic fee, water cost, shared expenses, total due
+   - Print total bill count and sum
+   - Write laskut CSV to current run folder
+   - If `typer.confirm("Ovatko laskut oikein?", default=True)` is False: echo `"Tarkista syöttötiedot ja käynnistä 'uusi' uudelleen."` ; return
+
+   **Phase 6 — generate PDFs and review**
+   - Generate individual bill PDFs and yhteenveto PDF (same logic as `pdf` command)
+   - Echo `"PDF-laskut generoitu: {n} laskua + yhteenveto."` and folder path
+   - If `typer.confirm("Julkaistaanko laskut nyt?", default=True)` is False: echo `"Laskut on tallennettu. Julkaise myöhemmin komennolla 'julkaise'."` ; return
+
+   **Phase 7 — publish**
+   - Call `require_smtp_config(config)` ; if fails print Finnish SMTP error and return
+   - Run publish logic (same as `julkaise` command): send customer emails, produce paperilaskut PDF, send yhteenveto to treasurer
+   - Print succeeded/failed email counts and confirmation
+
+### Create README.md
+1. Write `README.md` in Finnish at the project root. Content must cover the following sections in order:
+   - **Yleiskuvaus**: What the tool is, who it is for (~20 customer water cooperative), and that it automates the bi-monthly billing cycle
+   - **Asennus**: Install via `pip install -e .`; copy `.env.example` to `.env` and fill in SMTP credentials and data root path; list all required `.env` variables (`DATA_ROOT`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_TLS`, `TREASURER_EMAIL`)
+   - **Laskutustyönkulku**: The billing workflow as a numbered list matching the 8-step cycle — create/update `osakkaat` if changed; create/update `laskurivit` if changed; create `yleiset` for the cycle; create `lukemat` for the cycle; run `laskutus lasku` to generate `laskut` CSV; inspect and optionally edit `laskut` CSV; run `laskutus pdf` to generate bill PDFs; inspect PDFs; run `laskutus julkaise` to send emails, merge paper bills, and email `yhteenveto` to treasurer
+   - **Komennot**: Table or list of all four subcommands (`laskutus uusi`, `laskutus lasku`, `laskutus pdf`, `laskutus julkaise`) with their options (`--vuosi`, `--kuukausi`, `--data-hakemisto`, `--ylikirjoita`, `--lähetä-uudelleen`) and a one-line Finnish description for each; note that `uusi` is the recommended entry point for new users and covers the entire workflow interactively
+   - **Tiedostorakenne**: Explain the two-level folder layout — year folder (`2026/`) containing run subfolders named `<vuosi>-<KK>` (e.g., `2026/2026-02/` for a February cycle); explain that all files for one billing run live in its run subfolder; explain the `VVVVKKPP-tyyppi-lisätieto.csv` file naming convention; list each file type (`osakkaat`, `laskurivit`, `yleiset`, `lukemat`, `laskut`, `lasku`, `paperilaskut`, `yhteenveto`) with a one-line Finnish description of whether it is input or output
+   - **CSV-tiedostomuodot**: One subsection per input CSV file type with a table showing column name (Finnish), data type, and description:
+     - `osakkaat`: `nimi` (teksti), `katuosoite` (teksti), `postinumero` (teksti), `postitoimipaikka` (teksti), `sähköposti` (teksti), `puhelin` (teksti), `mittarinro` (teksti, tyhjä = ei aktiivinen), `laskutustapa` (sähköposti/paperi), `liittynyt` (päivämäärä YYYY-MM-DD), `lähtenyt` (päivämäärä tai tyhjä), `kiinteistötunnus` (teksti), `henkilömäärä` (kokonaisluku), `tilinumero` (teksti, vain tiedoksi — ei käytetä laskennassa), `kulutuspiste` (teksti, varattu tulevaa käyttöä varten — ei käytetä laskennassa)
+     - `laskurivit`: `nimike` (teksti), `summa` (desimaaliluku), `alv_prosentti` (desimaaliluku), `soveltamistapa` (aktiiviset / kaikki / kulutus)
+     - `yleiset`: key-value format with two columns `avain` and `arvo`; one row per setting; valid keys and their types: `jakso_alkaa` (YYYY-MM-DD), `jakso_loppuu` (YYYY-MM-DD), `eräpäivä` (YYYY-MM-DD), `osuuskunnan_nimi` (teksti), `iban` (teksti), `y_tunnus` (teksti), `yhteyshenkilö` (teksti), `puhelin` (teksti), `sähköposti` (teksti), `päämittarinro` (teksti); a cycle-specific file typically contains only the three date keys; missing keys are cascaded from older `yleiset` files automatically
+     - `lukemat`: `nimi` (teksti, käytä `päämittari` päämittarille), `päivämäärä` (YYYY-MM-DD), `lukema` (kokonaisluku kuutiometreissä)
+   - **Ensiajaminen**: Explain that only one seed file is needed — a `lukemat` CSV dated before the first billing cycle, containing one row per active customer with their initial meter reading and one row with `nimi=päämittari`; no seed `laskut` is required; bill numbering starts from 1 automatically; provide a concrete example table showing what the seed lukemat looks like
 
 ### Create Project Bootstrap Files
 1. `pyproject.toml`:
@@ -474,7 +561,7 @@ pyproject.toml
 
 ## Norms
 
-1. Language: All user-visible strings (CLI help text, error messages, CSV column headers, PDF labels, email subject and body) must be in Finnish. Source identifiers (variable names, function names, class names, module names) use English.
+1. Language: All user-visible strings (CLI help text, error messages, CSV column headers, PDF labels, email subject and body, and `README.md` prose) must be in Finnish. Source identifiers (variable names, function names, class names, module names) use English.
 
 2. CSV Encoding: Always read CSV with `encoding='utf-8-sig'` to transparently handle UTF-8-BOM from Excel. Always write CSV with `encoding='utf-8-sig'` and `newline=''` to produce files compatible with Finnish locale Excel on Windows. Finnish characters (ä, ö, å) must round-trip without corruption.
 
@@ -486,7 +573,7 @@ pyproject.toml
    - File not found: raise `BillingError` naming the missing file type in Finnish
    - Unexpected exceptions (not BillingError): propagate; CLI prints Finnish apology + traceback; exits with code 2
 
-5. File Naming: All output files follow `YYYYMMDD-type-note.ext` where date is cycle end date. Bill PDFs: `YYYYMMDD-lasku-sukunimi-etunimi.pdf`. Paper bills: `YYYYMMDD-paperilaskut.pdf`. Summary: `YYYYMMDD-yhteenveto.pdf`. Bills CSV: `YYYYMMDD-laskut.csv`.
+5. File Naming and Location: All files (input and output) for a billing run reside in the run subfolder `<data_root>/<year>/<year>-<MM>/`. File names follow `YYYYMMDD-type-note.ext` where date is the cycle end date. Bill PDFs: `YYYYMMDD-lasku-sukunimi-etunimi.pdf`. Paper bills: `YYYYMMDD-paperilaskut.pdf`. Summary: `YYYYMMDD-yhteenveto.pdf`. Bills CSV: `YYYYMMDD-laskut.csv`. The run folder is created by the tool if it does not exist.
 
 6. Reference Number Display: `format_reference_number` groups digits from right in blocks of max 5, space-separated, for PDF and email display only. Storage in CSV uses unformatted continuous digit string.
 
@@ -496,14 +583,16 @@ pyproject.toml
 
 9. SMTP Credentials: Never log, print, or embed in error messages. Stored only in `.env` (git-ignored). Fail before any file output during `julkaise` if credentials missing.
 
-10. Date Handling: All internal date parsing uses `date.fromisoformat()`. All Finnish display formatting uses `strftime('%d.%m.%Y')`. No timezone handling needed (all local dates).
+10. yleiset Format: The `yleiset` CSV always has exactly two columns (`avain`, `arvo`) with one row per key; any file containing a different column structure must be rejected with a Finnish error. A minimal cycle-specific `yleiset` contains only the three date keys; all other keys cascade from older files.
+
+11. Date Handling: All internal date parsing uses `date.fromisoformat()`. All Finnish display formatting uses `strftime('%d.%m.%Y')`. No timezone handling needed (all local dates).
 
 ## Safeguards
 
 1. Functional Constraints:
    - Tool writes no output files if input validation raises a fatal BillingError — all file writes occur after full validation pass
    - `julkaise` sends no emails if paper bill PDF or yhteenveto PDF generation fails
-   - Bill number counter must never produce duplicates: always computed as `max(prev_bills.bill_number) + 1`; raise BillingError if prev laskut CSV is empty or missing bill_number column
+   - Bill number counter must never produce duplicates: computed as `max(all laskunumero values across all laskut files) + 1`, or 1 if no laskut files exist; absence of laskut files is not an error
 
 2. Idempotency / Overwrite Protection:
    - Default behavior: raise `BillingError("Tulostiedosto on jo olemassa: {path}. Käytä --ylikirjoita ylikirjoittaaksesi.")` if any output file already exists
@@ -527,7 +616,7 @@ pyproject.toml
 6. Data Integrity Constraints:
    - Monetary values in CSV: exactly 2 decimal places (Decimal quantized to `0.01`)
    - Meter readings and consumption in CSV: plain integers, no decimal point
-   - `laskut` CSV is sole authoritative ledger for previous meter readings — no separate state file
+   - `lukemat` files are the sole authoritative reading ledger — `laskut` is a pure output file and is never read for meter reading data; no separate state file needed
 
 7. Security Constraints:
    - `.env` must be in `.gitignore`; tool logs a warning at startup if `.env` is tracked by git (`git ls-files --error-unmatch .env`)
@@ -539,9 +628,10 @@ pyproject.toml
    - Semicolon vs comma as CSV delimiter: default to comma; if Excel compatibility issues arise, confirm with user and add `--puolipiste` flag option
 
 9. Cold-Start Constraint:
-   - On first run, if no previous `laskut` CSV exists anywhere, emit Finnish error listing required seed file columns for both seed `laskut` and seed `lukemat`, instructing user to create them manually before first run
+   - On first run, if no previous `lukemat` file exists (result of `find_previous_lukemats` is empty), raise `BillingError` with Finnish message listing required seed `lukemat` columns (`nimi`, `päivämäärä`, `lukema`) and instructing user to create a seed `lukemat` CSV with one row per active customer and one row for `päämittari` before first run
+   - Absence of any `laskut` file is not an error — bill numbering starts from 1
 
 10. API / CLI Interface Constraints:
-    - All CLI option names in Finnish with `--` prefix: `--vuosi`, `--data-hakemisto`, `--ylikirjoita`, `--lähetä-uudelleen`
+    - All CLI option names in Finnish with `--` prefix: `--vuosi`, `--kuukausi`, `--data-hakemisto`, `--ylikirjoita`, `--lähetä-uudelleen`
     - All `--help` text in Finnish
     - Exit codes: 0 = success, 1 = BillingError (user-facing Finnish message), 2 = unexpected exception

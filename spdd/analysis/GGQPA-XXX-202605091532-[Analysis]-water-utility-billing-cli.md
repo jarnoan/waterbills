@@ -163,7 +163,7 @@ None — this is a greenfield project with no existing implementation.
 
 - **MeterReading (Lukema)**: A water meter measurement taken at a specific date, tied to a customer name. Provided in the `lukemat` input CSV — one row per customer who supplied a real reading for this cycle, plus one row for the main meter (`päämittari`). Customers absent from `lukemat` receive an estimated consumption instead.
 
-- **CustomerConsumption (Kulutus)**: Computed (not input) value: the difference between a customer's current meter reading (from `lukemat`) and their previous meter reading (from the latest `laskut` CSV). If no current reading exists for a customer in `lukemat`, consumption is estimated as equal to the value recorded in the previous `laskut` CSV. Flagged as real or estimated in the output.
+- **CustomerConsumption (Kulutus)**: Computed (not input) value: the difference between a customer's current meter reading (from `lukemat`) and their previous meter reading (from the most recent previous `lukemat` file). If no current reading exists for a customer in `lukemat`, consumption is estimated as the difference between the last two `lukemat` readings for that customer (prev − prev_prev); if only one previous reading exists, estimated consumption is zero with a warning. Flagged as real or estimated in the output.
 
 - **MainMeterConsumption**: Computed from the main meter's current reading (from the current `lukemat`) minus the main meter's previous reading (from the most recent previous `lukemat` file). The main meter has no entry in `laskut` — its reading history is tracked solely through `lukemat` files. Used only for water loss calculation in `yhteenveto`.
 
@@ -174,11 +174,11 @@ None — this is a greenfield project with no existing implementation.
   2. **PerAllCustomers** — total amount split equally among ALL co-op members including non-connected ones; each share rounded up to the next whole cent.
   3. **PerConsumption** — unit price multiplied by individual water consumption in m³ (full precision then round to cent normally).
 
-- **BillNumber (Laskunumero)**: A globally incrementing integer counter assigned to each bill. Stored in the `laskut` CSV. The counter is seeded from the highest bill number in the most recent `laskut` file (the previous cycle's output, or the seed on first run). Never reset. Serves as the base from which the bank reference number is computed.
+- **BillNumber (Laskunumero)**: A globally incrementing integer counter assigned to each bill. Stored in the `laskut` CSV. The counter is initialised by scanning all `laskut` files in the data directory across all years and taking the maximum bill number found; if no `laskut` files exist yet (first ever run), numbering starts from 1. Never reset. Serves as the base from which the bank reference number is computed.
 
-- **Bill (Lasku)**: A complete bill for one customer for one billing cycle. The `laskut` CSV row stores: bill number, previous meter reading + date, new meter reading + date, consumption, real/estimated flag, basic fee share, water cost, total due, bank reference number. The PDF additionally includes barcode, virtual barcode, and contact info. The `laskut` CSV is the authoritative record of readings for each cycle and serves as the source of "previous readings" in the next cycle.
+- **Bill (Lasku)**: A complete bill for one customer for one billing cycle. The `laskut` CSV row stores: bill number, previous meter reading + date, new meter reading + date, consumption, real/estimated flag, basic fee share, water cost, total due, bank reference number. The PDF additionally includes barcode, virtual barcode, and contact info. The `laskut` CSV is a pure output file — it is never read back as a source of readings for the next cycle.
 
-- **ReferenceNumber (Viitenumero)**: A Finnish bank reference number computed from the bill number using the Viitenumero algorithm (modulo 10 with weights 7-3-1) to append a check digit. Stored in the `laskut` CSV alongside the bill number. The seed `laskut` CSV contains bill numbers (and their corresponding reference numbers) so the counter can be bootstrapped on first real run.
+- **ReferenceNumber (Viitenumero)**: A Finnish bank reference number computed from the bill number using the Viitenumero algorithm (modulo 10 with weights 7-3-1) to append a check digit. Stored in the `laskut` CSV alongside the bill number.
 
 - **Barcode (Viivakoodi)**: A traditional 1D barcode printed on the Finnish bill PDF, encoding key payment information (IBAN, amount, reference number, due date). Machine-readable by bank scanners.
 
@@ -198,13 +198,17 @@ None — this is a greenfield project with no existing implementation.
 
 - **Rounding — shared bill lines**: For PerActiveCustomer and PerAllCustomers bill lines, each individual customer's share is rounded **up** to the next whole cent (ceiling). Total collected may slightly exceed the original line amount — intentional.
 
-- **Consumption derivation**: For each active customer, the tool looks up their current reading in `lukemat`. If found, consumption = current reading − previous reading (from the latest `laskut` CSV). If not found in `lukemat`, consumption = the consumption value recorded in the previous `laskut` CSV (estimated, same-as-last).
+- **Consumption derivation**: For each active customer, the tool looks up their current reading in `lukemat`. If found, consumption = current reading − previous reading (from the most recent previous `lukemat` file). If not found in `lukemat`, consumption is estimated as the difference between the last two `lukemat` readings for that customer (prev − prev_prev); if only one previous reading is available, estimated consumption is zero with a Finnish warning.
 
 - **Estimation flag**: The `laskut` CSV records for each customer whether their consumption is based on a real reading or an estimate. This flag appears on the output CSV row and may appear on the PDF.
 
-- **Seed files for cold start**: Before the very first run, the user creates an initial `laskut` CSV (seed) and an initial `lukemat` CSV (seed). The seed `laskut` contains previous meter readings and bill numbers (with reference numbers), seeding both the reading ledger and the bill number counter. The seed `lukemat` contains the main meter (`päämittari`) reading, seeding the main meter's baseline for water loss calculation on the first real run.
+- **Seed files for cold start**: Before the very first run, the user creates only one seed file: an initial `lukemat` CSV containing readings for all active customers and the main meter (`päämittari`). This seeds both the previous-reading ledger and the main meter baseline. No seed `laskut` is required — if no `laskut` files exist anywhere, the bill number counter starts from 1.
 
-- **File fallback**: If no input file of a given type exists for the current billing cycle, the tool uses the most recent previous file of that type (by date prefix in the filename). File discovery is deterministic based on the date prefix and the year folder. This applies to `osakkaat`, `laskurivit`, and `yleiset`; `lukemat` is always required (either real or seed).
+- **File fallback**: If no input file of a given type exists in the current billing run folder, the tool searches previous run folders (within the same year, then the previous year) sorted by `<year>-<MM>` folder name descending and uses the first match. File discovery is deterministic. This applies to `osakkaat` and `laskurivit`; a `lukemat` for the current run is always required (the seed lukemat in its own run folder serves as the initial one). `yleiset` uses cascade merge (see below).
+
+- **yleiset cascade merge**: The `yleiset` CSV uses a key-value format (two columns: `avain` and `arvo`, one row per setting). A new `yleiset` file need only contain the keys that changed — typically the three date fields (`jakso_alkaa`, `jakso_loppuu`, `eräpäivä`). The tool collects all `yleiset` files from the current run folder and all preceding run folders (current year then previous year, descending), reads them in order from most-recent to oldest, and merges key-value pairs with the first occurrence of each key winning. The merged result is validated to contain all required keys before proceeding.
+
+- **Run folder structure**: Each billing run (regular or mid-cycle) has its own subfolder under the year folder, named `<year>-<MM>` where `year` is the four-digit year and `MM` is the zero-padded month number of the last month of the billing cycle. Example: a cycle ending 2026-02-28 uses folder `2026/2026-02/`. All input and output files for that run reside in this subfolder. The seed lukemat also lives in a run folder (e.g., `2025/2025-12/` for a December 2025 seed).
 
 - **Bill number counter**: Bill numbers are assigned sequentially. Each new bill run reads the highest bill number from the most recent `laskut` CSV file (previous cycle output or seed on first run) to establish the starting counter, then increments for each new bill. Counter is never reset. The Finnish bank reference number (Viitenumero) is computed from the bill number by appending a check digit via the modulo-10 weights-7-3-1 algorithm.
 
@@ -226,9 +230,9 @@ None — this is a greenfield project with no existing implementation.
 
 ### Solution Direction
 
-- Python CLI tool with distinct subcommands for each workflow step: generate bills CSV, generate PDFs, publish (email + merged paper PDF + yhteenveto PDF to treasurer).
-- Input CSVs (`osakkaat`, `laskurivit`, `yleiset`, `lukemat`) are read-only inputs; `laskut` CSV and PDFs are outputs. The `laskut` CSV is also the source of previous meter readings for the next cycle.
-- Consumption is computed by the tool: current reading from `lukemat` minus previous reading from the latest `laskut` CSV. Estimated consumption (fallback) uses the consumption value from the previous `laskut` row directly.
+- Python CLI tool with distinct subcommands for each workflow step: generate bills CSV, generate PDFs, publish (email + merged paper PDF + yhteenveto PDF to treasurer). A fifth subcommand `uusi` provides an interactive wizard that guides the user through an entire billing cycle end-to-end — collecting and validating all inputs, then generating, reviewing, and publishing bills in one session.
+- Input CSVs (`osakkaat`, `laskurivit`, `yleiset`, `lukemat`) are read-only inputs; `laskut` CSV and PDFs are pure outputs — never read back by the tool.
+- Consumption is computed by the tool: current reading from `lukemat` minus previous reading from the most recent previous `lukemat` file. Estimated consumption (fallback) uses the difference between the last two `lukemat` readings for that customer.
 - File discovery uses date-sorted filename scanning within year-named folders to implement the "use latest if no cycle-specific file exists" rule.
 - PDF generation implements Finnish bill layout with barcode and virtual barcode as a standalone module.
 - Email delivery via configurable SMTP using Python's `smtplib`. Server address and credentials stored in a local `.env` file excluded from version control.
@@ -245,15 +249,19 @@ None — this is a greenfield project with no existing implementation.
 
 - **Virtual barcode format**: Finnish Banking Association Virtuaaliviivakoodi version 5 — numeric string encoding IBAN (without spaces), amount (euros and cents, 8 digits), reference number (padded), and due date (YYMMDD). Validated against specification test vectors.
 
-- **Consumption computation**: The tool reads the latest `laskut` CSV to obtain previous readings. For each active customer, it looks up their meter ID in `lukemat`; if found, computes difference; if not, copies the previous consumption and sets the estimated flag. This makes `laskut` the single authoritative ledger of per-customer readings across cycles.
+- **Consumption computation**: The tool reads the most recent previous `lukemat` file to obtain previous readings. For each active customer, if a current reading exists in the current `lukemat`, consumption = current − previous. If absent, estimated consumption = difference between the last two `lukemat` readings (prev − prev_prev); zero with a warning if only one previous reading exists. The `lukemat` files are the sole authoritative reading ledger across cycles.
 
-- **laskut CSV as reading ledger**: The richer `laskut` CSV (with prev/new readings, dates, consumption, flag, fee breakdown) replaces any need for a separate state file for readings. New cycles always read the latest `laskut` CSV to seed previous readings.
+- **lukemat files as reading ledger**: All previous meter readings come from `lukemat` files. The `laskut` CSV is a pure output — it records computed bill data but is never read back. This means any historical lookup (previous reading, estimated consumption) requires only the chain of `lukemat` files.
 
-- **Bill number counter persistence**: The tool reads the most recent `laskut` CSV file to find the current maximum bill number. New bills start from max+1. Reference number is computed from bill number on the fly via the Viitenumero algorithm. No separate state file needed.
+- **Bill number counter persistence**: The tool scans all `laskut` files across all year folders to find the maximum bill number already used; new bills start from max+1. If no `laskut` files exist (first ever run), numbering starts from 1. Reference number is computed from bill number on the fly via the Viitenumero algorithm. No separate state file needed.
 
 - **Mid-cycle split**: Basic fee split by day-ratio (old owner days / total cycle days × fee, new owner days / total cycle days × fee), each share rounded up to cent. All other charges assigned to new owner. Consumption attributed entirely to new owner.
 
 - **Paper bills**: Individual bill PDFs generated first, then merged (alphabetical by customer last name) into a single `paperilaskut` PDF using a PDF merge library.
+
+- **yleiset key-value format**: The `yleiset` CSV uses two columns (`avain`, `arvo`) instead of a single wide row. A new `yleiset` file for a cycle typically contains only the three date fields; the tool merges values from all `yleiset` files found across run folders (most recent wins per key). This avoids duplicating static cooperative info (name, IBAN, y-tunnus, main meter ID) every cycle while still allowing any field to be overridden by putting it in the current run's `yleiset`.
+
+- **Run folder per billing cycle**: Each billing run gets its own subfolder `<year>/<year>-<MM>/` under the data root. This keeps all files for a given cycle together and avoids filename collisions between cycles (multiple runs in the same year may produce files with identical date prefixes if re-run). The user identifies the run via `--vuosi` and `--kuukausi` CLI options; the tool constructs the run folder path from these. File fallback for static inputs (`osakkaat`, `laskurivit`, `yleiset`) searches earlier run folders sorted descending by folder name.
 
 - **Active customer field in `osakkaat`**: Customers connected to the water network are identified by the presence of a non-empty meter ID. Customers without a meter ID are co-op members only. No separate boolean field needed.
 
@@ -261,9 +269,9 @@ None — this is a greenfield project with no existing implementation.
 
 - **SQLite instead of CSV**: Would simplify querying. Rejected — requirement explicitly mandates CSV for human-editable transparency and Google Drive compatibility.
 - **macOS Mail.app integration**: Avoids SMTP credential management. Rejected — unreliable for automation; SMTP is robust and portable.
-- **Separate counter state file for bill numbers**: Simple and explicit. Rejected — `laskut` CSVs already contain all bill numbers; a separate file creates a synchronisation risk.
+- **Separate counter state file for bill numbers**: Simple and explicit. Rejected — scanning existing `laskut` output files for the max bill number achieves the same with no extra file to maintain.
 - **Per-customer stable reference numbers**: Easier for standing orders. Rejected by owner — the system uses an incrementing counter per bill, not per customer.
-- **Storing previous readings separately from laskut**: Cleaner separation. Rejected — `laskut` already contains all per-customer reading data; duplicating it creates synchronisation risk.
+- **Reading previous meter readings from laskut**: Would make `laskut` a dual-purpose file (input and output). Rejected — `lukemat` already contains all readings; using it as the sole reading ledger keeps `laskut` as pure output and simplifies cold-start seeding.
 
 ---
 
@@ -279,7 +287,7 @@ All previously identified ambiguities have been resolved by the updated requirem
 
 - **Mid-cycle ownership transfer — new owner consumption**: ~~Unclear~~ → Confirmed: `lukemat` may optionally include end-of-cycle reading for the new owner. If present, consumption is computed from it; if absent, estimated from previous owner's prior-cycle consumption. Tool must handle both cases and may have two rows per meter ID in `lukemat` (prev-owner at transfer date + new-owner at cycle end).
 
-- **Bill number counter cold start**: ~~Assumed~~ → Confirmed: the seed `laskut` CSV contains bill numbers and reference numbers. The tool reads the highest bill number from the most recent `laskut` file (seed on first run) to establish the counter.
+- **Bill number counter cold start**: Resolved — no seed `laskut` required. The tool scans all existing `laskut` output files for the maximum `laskunumero`; if none exist, numbering starts from 1.
 
 - **Billing summary format**: ~~Layout not specified~~ → Confirmed: two tables — billing table (customers, amounts, due dates, reference numbers) and water loss table (main meter vs. customer sum, difference in m³ and %).
 
@@ -303,7 +311,7 @@ All previously identified ambiguities have been resolved by the updated requirem
 
 - **PDF merge order for `paperilaskut`**: Alphabetical by last name assumed; needs confirmation.
 
-- **Seed file columns**: The seed `laskut` CSV must contain all columns the tool reads: customer name, meter ID, previous/new readings + dates, consumption, flag, fee breakdown, bill number, reference number. The seed `lukemat` must include the `päämittari` row. Both formats must be documented for the user.
+- **Seed file columns**: The only seed file required is the seed `lukemat` CSV, which must include one row per active customer and one row for `päämittari`, each with `nimi`, `päivämäärä`, and `lukema` columns. No seed `laskut` is needed. The seed lukemat format must be documented for the user.
 
 ### Technical Risks
 
@@ -321,7 +329,7 @@ All previously identified ambiguities have been resolved by the updated requirem
 
 - **PDF merge library compatibility**: `pypdf` must preserve barcode graphics when merging individual bill PDFs into `paperilaskut`. Mitigation: test merge output with a barcode scanner or banking app.
 
-- **Consumption derivation correctness**: Finding "previous reading" by scanning the latest `laskut` CSV must be deterministic. If a customer's meter ID changed, or if the `laskut` CSV was manually edited, the lookup could return wrong data. Mitigation: validate meter IDs against `osakkaat` before computing; warn on mismatches.
+- **Consumption derivation correctness**: Finding "previous reading" by scanning the most recent `lukemat` file must be deterministic. If a customer name changed between cycles, the lookup may fail. Mitigation: validate customer names against `osakkaat` before computing; warn if a customer has no previous `lukemat` entry.
 
 ### Acceptance Criteria Coverage
 
@@ -333,15 +341,17 @@ The requirement describes a workflow but does not contain formal Acceptance Crit
 | 2 | Create/update bill lines CSV (`laskurivit`) | Partial | Tool validates; creation is manual. Rounding-up rule for shared lines. |
 | 3 | Create general information CSV (`yleiset`) | Partial | Adds main meter ID field. |
 | 4 | Create meter readings CSV (`lukemat`) | Partial | Manual or AI-created. Only real readings included; main meter as `päämittari`. |
-| 5 | Produce customer bills CSV (`laskut`) | Yes | Rich output: bill number, readings, consumption, flag, fee breakdown, reference number. Consumption derived from `lukemat` vs previous `laskut`. |
+| 5 | Produce customer bills CSV (`laskut`) | Yes | Rich output: bill number, readings, consumption, flag, fee breakdown, reference number. Consumption derived from current vs previous `lukemat`. `laskut` is pure output. |
 | 5b | User checks/edits `laskut` CSV | Out of scope | Manual step. |
 | 6 | Produce bill PDFs (Finnish standard, barcode, virtual barcode) | Yes | Finnish barcode spec must be sourced; layout TBD. |
 | 7 | User checks PDFs | Out of scope | Manual step. |
 | 8a | Produce paper bills PDF (`paperilaskut`) | Yes | Merged PDF of paper-preference customers. User prints manually. |
 | 8b | Send bills by email (PDF + plain text) | Yes | Configurable SMTP via `.env`. |
 | 8c | Send `yhteenveto` PDF to treasurer | Yes | PDF output with water loss data; emailed as attachment. |
-| — | Seed files for cold start | Yes | User creates initial `laskut` CSV and `lukemat` CSV before first run. |
+| — | Seed files for cold start | Yes | User creates only seed `lukemat` CSV with readings for all active customers + `päämittari`. No seed `laskut` required. |
 | — | Mid-cycle ownership transfer | Yes | Basic fee by day-ratio; other charges to new owner; `lukemat` has prev-owner reading at transfer date. |
 | — | File fallback (use latest if no cycle-specific file) | Yes | Deterministic date-prefix scanning within year folders. |
 | — | Water loss reporting | Yes | Main meter vs. sum of customer consumptions; shown in `yhteenveto`. |
 | — | Authority reporting | Future | Number of persons field captured but report not in scope for current phase. |
+| — | README.md documentation | Yes | Finnish-language README covering workflow, all CSV formats with column specs, .env setup, and seeding instructions. |
+| — | `uusi` interactive wizard | Yes | End-to-end guided wizard: collect/validate yleiset, osakkaat, lukemat, laskurivit; generate laskut; review; generate PDFs; publish. Handles both initial seeding and regular cycle setup. |
