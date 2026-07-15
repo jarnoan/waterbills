@@ -3,8 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from reportlab.lib import colors
+from reportlab.lib.enums import TA_RIGHT
 from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
@@ -26,6 +27,13 @@ def render_summary_pdf(summary: BillingSummary, output_path: Path) -> None:
     styles = getSampleStyleSheet()
     normal = styles["Normal"]
     heading = styles["Heading2"]
+    large_bold = ParagraphStyle("large_bold", fontSize=12, leading=14, fontName="Helvetica-Bold")
+    large_bold_right = ParagraphStyle(
+        "large_bold_right", fontSize=12, leading=14, fontName="Helvetica-Bold", alignment=TA_RIGHT
+    )
+
+    ci = summary.contact_info
+    usable_w = A4[0] - 40 * mm
 
     cycle = summary.billing_cycle
     period = (
@@ -33,7 +41,18 @@ def render_summary_pdf(summary: BillingSummary, output_path: Path) -> None:
     )
 
     story = []
-    story.append(Paragraph("Laskutusyhteenveto", styles["Heading1"]))
+    title_table = Table(
+        [[Paragraph(ci.cooperative_name, large_bold), Paragraph("Laskutusyhteenveto", large_bold_right)]],
+        colWidths=[usable_w * 0.5, usable_w * 0.5],
+    )
+    title_table.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+    ]))
+    story.append(title_table)
     story.append(Paragraph(f"Laskutusjakso: {period}", normal))
     story.append(Spacer(1, 6 * mm))
 

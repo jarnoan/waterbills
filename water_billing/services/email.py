@@ -69,12 +69,11 @@ def send_bill_email(
         f"Tilinumero (IBAN): {ci.iban}\n"
         f"Viitenumero: {format_reference_number(bill.reference_number)}\n"
         f"Virtuaaliviivakoodi: {virtual_bc}\n\n"
-        f"Tiedustelut: {ci.contact_person}, {ci.phone}, {ci.email}\n\n"
-        f"Terveisin,\n{ci.cooperative_name}"
+        f"Terveisin,\n{ci.cooperative_name}\n{ci.contact_person}\n{ci.phone}\n{ci.email}\n\n"
     )
 
     subject = (
-        f"Lasku {cycle.end_date.year}/{bill.bill_number} — {ci.cooperative_name}"
+        f"Lasku {bill.bill_number} — {ci.cooperative_name}"
     )
 
     msg = MIMEMultipart()
@@ -108,15 +107,16 @@ def send_summary_email(
     subject = f"Laskutusyhteenveto {period}"
     body = f"Liitteenä laskutusyhteenveto kaudelle {period}."
 
+    ci = summary.contact_info
     msg = MIMEMultipart()
-    msg["From"] = config.smtp_user
+    msg["From"] = formataddr((str(Header(ci.cooperative_name, "utf-8")), ci.email))
     msg["To"] = recipient
     msg["Subject"] = subject
     msg.attach(MIMEText(body, "plain", "utf-8"))
     _attach_pdf(msg, summary_pdf_path)
 
     with _smtp_connection(config) as server:
-        server.sendmail(config.smtp_user, recipient, msg.as_string())
+        server.sendmail(ci.email, recipient, msg.as_string())
 
 
 def send_all_bills(
