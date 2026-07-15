@@ -9,7 +9,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formataddr
 from pathlib import Path
-from typing import Generator, List, Tuple
+from typing import Generator, List, Set, Tuple
 
 from water_billing.config import AppConfig
 from water_billing.domain.models import Bill, BillingSummary, Customer, GeneralInfo
@@ -156,3 +156,31 @@ def send_all_bills(
                 failed.append(f"{bill.customer_name}: {exc}")
 
     return succeeded, failed
+
+
+def email_bill_pdf_paths(
+    bills: List[Bill],
+    customers: List[Customer],
+    pdf_dir: Path,
+    cycle_end_date,
+) -> Set[Path]:
+    """Return PDF paths for bills that will be delivered by email (not paper)."""
+    customer_by_name = {c.name: c for c in customers}
+    paths: Set[Path] = set()
+    for bill in bills:
+        customer = customer_by_name.get(bill.customer_name)
+        if customer is None or customer.billing_preference.lower() != "sähköposti":
+            continue
+        name_parts = bill.customer_name.split()
+        if len(name_parts) >= 2:
+            stem = (
+                f"{cycle_end_date.strftime('%Y%m%d')}"
+                f"-lasku-{name_parts[-1].lower()}-{name_parts[0].lower()}"
+            )
+        else:
+            stem = (
+                f"{cycle_end_date.strftime('%Y%m%d')}"
+                f"-lasku-{bill.customer_name.lower().replace(' ', '-')}"
+            )
+        paths.add(pdf_dir / f"{stem}.pdf")
+    return paths

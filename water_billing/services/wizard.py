@@ -38,7 +38,7 @@ from water_billing.services.billing import (
     get_next_bill_number,
     split_bills_for_transfer,
 )
-from water_billing.services.email import send_all_bills, send_summary_email
+from water_billing.services.email import email_bill_pdf_paths, send_all_bills, send_summary_email
 from water_billing.services.validation import validate_inputs
 
 _YLEISET_KEY_ORDER = [
@@ -732,8 +732,10 @@ def run_cycle_wizard(
         return
 
     paper_out = run_dir / f"{cycle.end_date.strftime('%Y%m%d')}-paperilaskut.pdf"
+    emailed = email_bill_pdf_paths(bills, customers, run_dir, cycle.end_date)
     paper_pdfs = sort_bill_pdfs_alphabetically(
-        list(run_dir.glob(f"{cycle.end_date.strftime('%Y%m%d')}-lasku-*.pdf"))
+        [p for p in run_dir.glob(f"{cycle.end_date.strftime('%Y%m%d')}-lasku-*.pdf")
+         if p not in emailed]
     )
     if paper_pdfs:
         merge_pdfs(paper_pdfs, paper_out)
