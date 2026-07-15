@@ -13,7 +13,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.platypus import (
-    HRFlowable,
+    Flowable,
     Image,
     Paragraph,
     SimpleDocTemplate,
@@ -21,6 +21,21 @@ from reportlab.platypus import (
     Table,
     TableStyle,
 )
+
+class _HRule(Flowable):
+    def __init__(self, width: float, thickness: float = 0.5, color=colors.grey):
+        self._draw_width = width
+        self._thickness = thickness
+        self._color = color
+
+    def wrap(self, availWidth, availHeight):
+        return (availWidth, self._thickness)
+
+    def draw(self):
+        self.canv.setStrokeColor(self._color)
+        self.canv.setLineWidth(self._thickness)
+        self.canv.line(0, 0, self._draw_width, 0)
+
 
 from water_billing.domain.models import Bill, ContactInfo, Customer, GeneralInfo
 from water_billing.domain.rules import ApplicationRule
@@ -125,13 +140,17 @@ def render_bill_pdf(
     )
     monospace = ParagraphStyle("monospace", fontSize=8, leading=10, fontName="Courier")
 
+    # SimpleDocTemplate frames add 6 pt of padding on every side, which would
+    # shift paragraphs and rules off the true margin while full-width tables
+    # get centered back onto it. Compensate so all content aligns at `margin`.
+    frame_pad = 6
     doc = SimpleDocTemplate(
         str(output_path),
         pagesize=A4,
-        leftMargin=margin,
-        rightMargin=margin,
-        topMargin=margin,
-        bottomMargin=30 * mm,
+        leftMargin=margin - frame_pad,
+        rightMargin=margin - frame_pad,
+        topMargin=margin - frame_pad,
+        bottomMargin=30 * mm - frame_pad,
     )
 
     story = []
@@ -150,7 +169,7 @@ def render_bill_pdf(
     ]))
     story.append(header)
     story.append(Spacer(1, 2 * mm))
-    story.append(HRFlowable(width="100%", thickness=0.5, color=colors.grey))
+    story.append(_HRule(usable_w, 0.5, colors.grey))
     story.append(Spacer(1, 3 * mm))
 
     # Section 2 — Billing info block
@@ -194,7 +213,7 @@ def render_bill_pdf(
     ]))
     story.append(info_table)
     story.append(Spacer(1, 3 * mm))
-    story.append(HRFlowable(width="100%", thickness=0.5, color=colors.grey))
+    story.append(_HRule(usable_w, 0.5, colors.grey))
     story.append(Spacer(1, 3 * mm))
 
     if ci.message:
@@ -292,7 +311,7 @@ def render_bill_pdf(
     story.append(Spacer(1, 5 * mm))
 
     # Section 4 — Payment information
-    story.append(HRFlowable(width="100%", thickness=1.5, color=colors.black))
+    story.append(_HRule(usable_w, 1.5, colors.black))
     story.append(Spacer(1, 3 * mm))
     story.append(Paragraph("Maksutiedot", bold))
     story.append(Spacer(1, 2 * mm))
