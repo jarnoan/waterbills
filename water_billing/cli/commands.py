@@ -204,6 +204,8 @@ def pdf(
                         vat=vat,
                         total=customer_amount + vat,
                         application_rule=line.application_rule,
+                        cycle_start=line.cycle_start,
+                        cycle_end=line.cycle_end,
                     )
                 )
             bill_with_items = dataclasses.replace(bill, line_items=line_items)

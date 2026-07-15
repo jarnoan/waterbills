@@ -222,9 +222,11 @@ def render_bill_pdf(
             Paragraph(format_amount_fi(item.vat), right_normal),
             Paragraph(format_amount_fi(item.total), right_normal),
         ])
+        item_start = item.cycle_start or cycle.start_date
+        item_end = item.cycle_end or cycle.end_date
         period_text = (
-            f"Rivin laskutusjakso: {format_date_fi(cycle.start_date)} – "
-            f"{format_date_fi(cycle.end_date)}"
+            f"Rivin laskutusjakso: {format_date_fi(item_start)} – "
+            f"{format_date_fi(item_end)}"
         )
         if item.application_rule == ApplicationRule.PER_CONSUMPTION:
             readings_text = f"\nLukemat {bill.prev_reading} – {bill.new_reading}"

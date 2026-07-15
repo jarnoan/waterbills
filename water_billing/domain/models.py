@@ -75,6 +75,8 @@ class BillLine:
     unit_price: Decimal
     vat_percent: Decimal
     application_rule: "ApplicationRule"
+    cycle_start: Optional[date] = None
+    cycle_end: Optional[date] = None
 
 
 @dataclass(frozen=True)
@@ -88,6 +90,8 @@ class BillLineItem:
     vat: Decimal
     total: Decimal
     application_rule: "ApplicationRule"
+    cycle_start: Optional[date] = None
+    cycle_end: Optional[date] = None
 
 
 @dataclass(frozen=True)

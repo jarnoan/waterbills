@@ -82,6 +82,8 @@ def read_bill_lines(path: Path) -> List[BillLine]:
                         )
                 except Exception:
                     pass
+            raw_start = row.get("jakso_alkaa", "").strip()
+            raw_end = row.get("jakso_loppuu", "").strip()
             lines.append(
                 BillLine(
                     title=row["nimike"].strip(),
@@ -90,6 +92,8 @@ def read_bill_lines(path: Path) -> List[BillLine]:
                     unit_price=unit_price,
                     vat_percent=Decimal(row["alv-%"].strip()),
                     application_rule=rule,
+                    cycle_start=date.fromisoformat(raw_start) if raw_start else None,
+                    cycle_end=date.fromisoformat(raw_end) if raw_end else None,
                 )
             )
     return lines

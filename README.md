@@ -145,8 +145,12 @@ Tiedostot nimetään muodossa `VVVVKKPP-tyyppi[-lisätieto].ext`.
 | `alv` | desimaaliluku | Laskennallinen: `netto × alv-%` (viitetieto) |
 | `yhteensä` | desimaaliluku | Laskennallinen: `netto + alv` (viitetieto) |
 | `soveltamistapa` | teksti | `aktiiviset` / `kaikki` / `kulutus` |
+| `jakso_alkaa` | päivämäärä (YYYY-MM-DD) tai tyhjä | Rivin laskutusjakson alkupäivä; jos tyhjä, käytetään `yleiset`-tiedoston arvoa |
+| `jakso_loppuu` | päivämäärä (YYYY-MM-DD) tai tyhjä | Rivin laskutusjakson loppupäivä; jos tyhjä, käytetään `yleiset`-tiedoston arvoa |
 
 Huom: `netto`, `alv` ja `yhteensä` ovat viitetietoja — laskennassa käytetään `määrä`- ja `a-hinta`-sarakkeita.
+
+Rivikohtainen laskutusjakso on hyödyllinen esimerkiksi vakuutusmaksuille ja pankkikuluille, jotka laskutetaan kerran vuodessa eri jaksolla kuin vesimaksut.
 
 Soveltamistavat:
 - `aktiiviset` — jaetaan tasan aktiiville osakkaille (kattohinta per osakas)

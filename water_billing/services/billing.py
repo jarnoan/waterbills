@@ -197,6 +197,8 @@ def generate_bills(
                     vat=vat,
                     total=customer_amount + vat,
                     application_rule=line.application_rule,
+                    cycle_start=line.cycle_start,
+                    cycle_end=line.cycle_end,
                 )
             )
 
