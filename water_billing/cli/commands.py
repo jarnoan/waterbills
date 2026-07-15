@@ -318,7 +318,8 @@ def julkaise(
             )
         else:
             succeeded, failed = send_all_bills(config, bills, customers, run_dir, general_info)
-            typer.echo(f"Sähköpostit lähetetty: {len(succeeded)}")
+            for email in succeeded:
+                typer.echo(f"Sähköposti lähetetty: {email}")
             if failed:
                 typer.echo(f"Epäonnistuneet: {', '.join(failed)}", err=True)
 

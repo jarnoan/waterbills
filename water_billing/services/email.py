@@ -151,7 +151,7 @@ def send_all_bills(
                 send_bill_email(
                     config, bill, pdf_path, general_info, customer, server
                 )
-                succeeded.append(bill.customer_name)
+                succeeded.append(customer.email)
             except Exception as exc:
                 failed.append(f"{bill.customer_name}: {exc}")
 
