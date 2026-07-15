@@ -139,6 +139,7 @@ def read_general_info(yleiset_paths: List[Path]) -> GeneralInfo:
     raw_bic = merged.get("bic", "").strip()
     raw_street_address = merged.get("osoite", "").strip()
     raw_web_url = merged.get("www", "").strip()
+    raw_message = merged.get("viesti", "").strip().replace("\\n", "\n")
     contact = ContactInfo(
         cooperative_name=merged["osuuskunnan_nimi"],
         iban=merged["iban"],
@@ -155,6 +156,7 @@ def read_general_info(yleiset_paths: List[Path]) -> GeneralInfo:
         main_meter_basic_fee=Decimal(raw_basic_fee) if raw_basic_fee else None,
         water_price=Decimal(raw_water_price) if raw_water_price else None,
         initial_bill_number=int(raw_initial_bill) if raw_initial_bill else None,
+        message=raw_message or None,
     )
     return GeneralInfo(billing_cycle=cycle, contact_info=contact)
 

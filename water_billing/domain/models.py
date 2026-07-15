@@ -52,6 +52,7 @@ class ContactInfo:
     main_meter_basic_fee: Optional[Decimal]
     water_price: Optional[Decimal]
     initial_bill_number: Optional[int]
+    message: Optional[str] = None
 
 
 @dataclass(frozen=True)

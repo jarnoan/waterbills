@@ -198,6 +198,10 @@ def render_bill_pdf(
     story.append(HRFlowable(width="100%", thickness=0.5, color=colors.grey))
     story.append(Spacer(1, 3 * mm))
 
+    if ci.message:
+        story.append(Paragraph(ci.message.replace("\n", "<br/>"), normal))
+        story.append(Spacer(1, 3 * mm))
+
     # Section 3 — Line items table (outer border only, no INNERGRID)
     num_col_widths = [22 * mm, 18 * mm, 22 * mm, 14 * mm, 18 * mm, 22 * mm]
     title_col_w = usable_w - sum(num_col_widths)
