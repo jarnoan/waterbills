@@ -252,7 +252,7 @@ def render_bill_pdf(
             f"{format_date_fi(item_end)}"
         )
         if item.application_rule == ApplicationRule.PER_CONSUMPTION:
-            readings_text = f"\nLukemat {bill.prev_reading} – {bill.new_reading}"
+            readings_text = f"<br/>Lukemat {bill.prev_reading} – {bill.new_reading}"
             if bill.is_estimated:
                 readings_text += " (arvio)"
             period_text += readings_text
