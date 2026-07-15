@@ -9,7 +9,9 @@ from typing import List, Optional
 @dataclass(frozen=True)
 class Customer:
     name: str
-    address: str
+    street_address: str
+    postal_code: str
+    city: str
     email: str
     phone: str
     meter_id: str
@@ -18,6 +20,8 @@ class Customer:
     left_date: Optional[date]
     property_id: str
     number_of_persons: int
+    bank_account: Optional[str]
+    consumption_point: Optional[str]
 
     def is_active(self) -> bool:
         return bool(self.meter_id.strip())
@@ -27,6 +31,7 @@ class Customer:
 class BillingCycle:
     start_date: date
     end_date: date
+    bill_date: date
     due_date: date
 
 
@@ -34,11 +39,19 @@ class BillingCycle:
 class ContactInfo:
     cooperative_name: str
     iban: str
+    bic: Optional[str]
     y_tunnus: str
     contact_person: str
+    street_address: Optional[str]
     phone: str
     email: str
+    web_url: Optional[str]
     main_meter_id: str
+    treasurer_email: str
+    main_meter_consumption_point: Optional[str]
+    main_meter_basic_fee: Optional[Decimal]
+    water_price: Optional[Decimal]
+    initial_bill_number: Optional[int]
 
 
 @dataclass(frozen=True)
@@ -57,8 +70,23 @@ class MeterReading:
 @dataclass(frozen=True)
 class BillLine:
     title: str
-    amount: Decimal
+    count: Decimal
+    unit: str
+    unit_price: Decimal
     vat_percent: Decimal
+    application_rule: "ApplicationRule"
+
+
+@dataclass(frozen=True)
+class BillLineItem:
+    title: str
+    count: Decimal
+    unit: str
+    unit_price: Decimal
+    netto: Decimal
+    vat_percent: Decimal
+    vat: Decimal
+    total: Decimal
     application_rule: "ApplicationRule"
 
 
@@ -90,6 +118,7 @@ class Bill:
     shared_expense_share: Decimal
     total_due: Decimal
     reference_number: str
+    line_items: List["BillLineItem"]
 
 
 @dataclass(frozen=True)

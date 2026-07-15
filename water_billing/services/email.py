@@ -90,6 +90,15 @@ def send_summary_email(
     summary_pdf_path: Path,
     summary: BillingSummary,
 ) -> None:
+    from water_billing.domain.rules import BillingError
+
+    recipient = summary.contact_info.treasurer_email or config.treasurer_email
+    if not recipient:
+        raise BillingError(
+            "Rahastonhoitajan sähköposti puuttuu sekä yleiset-tiedostosta"
+            " että .env-tiedostosta"
+        )
+
     cycle = summary.billing_cycle
     period = (
         f"{format_date_fi(cycle.start_date)}–{format_date_fi(cycle.end_date)}"
@@ -99,13 +108,13 @@ def send_summary_email(
 
     msg = MIMEMultipart()
     msg["From"] = config.smtp_user
-    msg["To"] = config.treasurer_email
+    msg["To"] = recipient
     msg["Subject"] = subject
     msg.attach(MIMEText(body, "plain", "utf-8"))
     _attach_pdf(msg, summary_pdf_path)
 
     with _smtp_connection(config) as server:
-        server.sendmail(config.smtp_user, config.treasurer_email, msg.as_string())
+        server.sendmail(config.smtp_user, recipient, msg.as_string())
 
 
 def send_all_bills(

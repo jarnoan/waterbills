@@ -68,7 +68,7 @@ def load_config(data_root_override: Optional[Path] = None) -> AppConfig:
 def require_smtp_config(config: AppConfig) -> None:
     missing = [
         field
-        for field in ("smtp_host", "smtp_user", "smtp_password", "treasurer_email")
+        for field in ("smtp_host", "smtp_user", "smtp_password")
         if not getattr(config, field)
     ]
     if missing:

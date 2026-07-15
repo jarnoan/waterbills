@@ -15,7 +15,9 @@ from datetime import date
 def _customer(name: str, active: bool = True) -> Customer:
     return Customer(
         name=name,
-        address="",
+        street_address="",
+        postal_code="",
+        city="",
         email="",
         phone="",
         meter_id="M1" if active else "",
@@ -24,13 +26,17 @@ def _customer(name: str, active: bool = True) -> Customer:
         left_date=None,
         property_id="",
         number_of_persons=1,
+        bank_account=None,
+        consumption_point=None,
     )
 
 
 def _line(amount: str, rule: ApplicationRule) -> BillLine:
     return BillLine(
         title="Testi",
-        amount=Decimal(amount),
+        count=Decimal("1"),
+        unit="kpl",
+        unit_price=Decimal(amount),
         vat_percent=Decimal("0"),
         application_rule=rule,
     )
@@ -47,7 +53,6 @@ def test_per_active_customer_split():
     line = _line("10.00", ApplicationRule.PER_ACTIVE_CUSTOMER)
     result = distribute_bill_line(line, customers, {})
     assert "A" in result and "B" in result and "C" in result
-    # ceil(10.00/3) = ceil(3.333..) = 3.34
     assert result["A"] == Decimal("3.34")
 
 
@@ -91,7 +96,6 @@ def test_per_active_raises_if_no_active():
 
 
 def test_ceiling_applied_correctly():
-    # 100.00 / 3 = 33.333... → ceil = 33.34
     customers = [_customer("A"), _customer("B"), _customer("C")]
     line = _line("100.00", ApplicationRule.PER_ACTIVE_CUSTOMER)
     result = distribute_bill_line(line, customers, {})

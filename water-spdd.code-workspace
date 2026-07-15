@@ -2,6 +2,12 @@
 	"folders": [
 		{
 			"path": "."
+		},
+		{
+			"path": "../vesimittari"
+		},
+		{
+			"path": "../../vesiosuuskunta"
 		}
 	],
 	"settings": {}
