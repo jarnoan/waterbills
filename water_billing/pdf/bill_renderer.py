@@ -155,15 +155,14 @@ def render_bill_pdf(
 
     # Section 2 — Billing info block
     left_cell = [
-        Paragraph("Asiakas", small_grey),
         Paragraph(customer.name, normal),
         Paragraph(customer.street_address, normal),
         Paragraph(f"{customer.postal_code} {customer.city}", normal),
     ]
 
     meta_rows = [
-        ["Laskunumero", str(bill.bill_number)],
-        ["Laskupäivä", format_date_fi(cycle.bill_date)],
+        ["Laskun numero", str(bill.bill_number)],
+        ["Päivämäärä", format_date_fi(cycle.bill_date)],
         ["Eräpäivä", format_date_fi(cycle.due_date)],
     ]
     if customer.consumption_point:
@@ -240,18 +239,20 @@ def render_bill_pdf(
             period_text += readings_text
         item_data.append([Paragraph(period_text, small_italic), "", "", "", "", "", ""])
 
-    netto_total = sum(i.netto for i in bill.line_items)
-    vat_total = sum(i.vat for i in bill.line_items)
-    vat_rates = {i.vat_percent for i in bill.line_items}
-    vat_rate_str = "/".join(_price_str(r) for r in sorted(vat_rates))
-    item_data.append([
-        Paragraph("", normal), Paragraph("", normal),
-        Paragraph("Alv-erittely", small),
-        Paragraph(format_amount_fi(netto_total), right_normal),
-        Paragraph(vat_rate_str, right_normal),
-        Paragraph(format_amount_fi(vat_total), right_normal),
-        Paragraph("", normal),
-    ])
+    vat_rates = sorted({i.vat_percent for i in bill.line_items})
+    for idx, rate in enumerate(vat_rates):
+        rate_items = [i for i in bill.line_items if i.vat_percent == rate]
+        rate_netto = sum(i.netto for i in rate_items)
+        rate_vat = sum(i.vat for i in rate_items)
+        label = "Alv-erittely" if idx == 0 else ""
+        item_data.append([
+            Paragraph("", normal), Paragraph("", normal),
+            Paragraph(label, small),
+            Paragraph(format_amount_fi(rate_netto), right_normal),
+            Paragraph(_price_str(rate), right_normal),
+            Paragraph(format_amount_fi(rate_vat), right_normal),
+            Paragraph("", normal),
+        ])
 
     n_items = len(bill.line_items)
     sub_cmds = []
@@ -277,7 +278,7 @@ def render_bill_pdf(
     total_row = Table(
         [[
             Paragraph("LASKU YHTEENSÄ:", large_bold),
-            Paragraph(f"{format_amount_fi(bill.total_due)} euroa", large_bold_right),
+            Paragraph(format_amount_fi(bill.total_due), large_bold_right),
         ]],
         colWidths=[usable_w * 0.6, usable_w * 0.4],
     )
