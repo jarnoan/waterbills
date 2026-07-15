@@ -4,81 +4,81 @@ from decimal import Decimal
 from water_billing.encoding.virtual_barcode import encode_virtual_barcode
 
 
-# Test vectors from Finanssiala Virtuaaliviivakoodi v5 specification
+# Test vectors from the Finanssiala Pankkiviivakoodi guide, version 4 examples
 # https://www.finanssiala.fi/maksujenvalitys/dokumentit/Pankkiviivakoodi-opas.pdf
 
-def test_vector_1():
-    # IBAN: FI58 1017 0112 3456 87, amount: 482.54, ref: 559582243294671, due: 2010-06-12
+def test_spec_example_1():
+    # IBAN: FI79 4405 2020 0360 82, amount: 4883.15,
+    # ref: 86851 62596 19897, due: 12.6.2010
     result = encode_virtual_barcode(
-        iban="FI5810171012345678",
-        amount=Decimal("482.54"),
-        reference_number="559582243294671",
+        iban="FI79 4405 2020 0360 82",
+        amount=Decimal("4883.15"),
+        reference_number="868516259619897",
         due_date=date(2010, 6, 12),
     )
-    # version(1) + account_16 + amount_8 + reserved_3 + ref_23 + due_6
-    assert result.startswith("5")
-    assert len(result) == 57
-    # account digits from FI5810171012345678: "10171012345678" → pad to 16: "0010171012345678"
-    assert result[1:17] == "0010171012345678"
-    # amount 482.54 → 48254 → "00048254"
-    assert result[17:25] == "00048254"
-    # reserved
-    assert result[25:28] == "000"
-    # reference 559582243294671 → pad to 23: "00000000559582243294671"
-    assert result[28:51] == "00000000559582243294671"
-    # due 2010-06-12 → "100612"
-    assert result[51:] == "100612"
+    assert result == "479440520200360820048831500000000868516259619897100612"
 
 
-def test_vector_2():
-    # IBAN: FI02 5000 4640 0013 02, amount: 693.80, ref: 7758474, due: 2011-07-24
+def test_spec_example_2():
+    # IBAN: FI58 1017 1000 0001 22, amount: 482.99,
+    # ref: 55958 22432 94671, due: 31.1.2012
     result = encode_virtual_barcode(
-        iban="FI0250004640001302",
-        amount=Decimal("693.80"),
-        reference_number="7758474",
-        due_date=date(2011, 7, 24),
+        iban="FI58 1017 1000 0001 22",
+        amount=Decimal("482.99"),
+        reference_number="559582243294671",
+        due_date=date(2012, 1, 31),
     )
-    assert len(result) == 57
-    assert result[1:17] == "0050004640001302"
-    assert result[17:25] == "00069380"
-    assert result[25:28] == "000"
-    assert result[28:51] == "00000000000000007758474"  # 7758474 zero-padded to 23
-    assert result[51:] == "110724"
+    assert result == "458101710000001220004829900000000559582243294671120131"
 
 
-def test_vector_3():
-    # Zero amount
+def test_spec_example_3():
+    # IBAN: FI02 5000 4640 0013 02, amount: 693.80,
+    # ref: 69 87567 20834 35364, due: 9.7.2011
+    result = encode_virtual_barcode(
+        iban="FI02 5000 4640 0013 02",
+        amount=Decimal("693.80"),
+        reference_number="69875672083435364",
+        due_date=date(2011, 7, 9),
+    )
+    assert result == "402500046400013020006938000000069875672083435364110709"
+
+
+def test_structure():
     result = encode_virtual_barcode(
         iban="FI2112345600000785",
         amount=Decimal("0.00"),
         reference_number="1",
         due_date=date(2025, 12, 31),
     )
-    assert len(result) == 57
+    assert len(result) == 54
+    assert result[0] == "4"
+    # account: IBAN without the FI country code, check digits included
+    assert result[1:17] == "2112345600000785"
     assert result[17:25] == "00000000"
-    assert result[28:51] == "00000000000000000000001"
-    assert result[51:] == "251231"
+    assert result[25:28] == "000"
+    assert result[28:48] == "00000000000000000001"
+    assert result[48:] == "251231"
 
 
-def test_length_always_57():
+def test_length_always_54():
     result = encode_virtual_barcode(
         iban="FI9814283500171141",
         amount=Decimal("9999.99"),
-        reference_number="123456789012345678901",
+        reference_number="12345678901234567890",  # max-length 20-digit reference
         due_date=date(2099, 1, 1),
     )
-    assert len(result) == 57
+    assert len(result) == 54
 
 
 def test_iban_with_spaces():
     r1 = encode_virtual_barcode(
-        iban="FI58 1017 1012 3456 78",
+        iban="FI58 1017 1000 0001 22",
         amount=Decimal("10.00"),
         reference_number="1",
         due_date=date(2025, 1, 1),
     )
     r2 = encode_virtual_barcode(
-        iban="FI5810171012345678",
+        iban="FI5810171000000122",
         amount=Decimal("10.00"),
         reference_number="1",
         due_date=date(2025, 1, 1),
