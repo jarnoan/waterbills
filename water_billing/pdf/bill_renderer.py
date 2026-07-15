@@ -165,10 +165,11 @@ def render_bill_pdf(
         ["Laskunumero", str(bill.bill_number)],
         ["Laskupäivä", format_date_fi(cycle.bill_date)],
         ["Eräpäivä", format_date_fi(cycle.due_date)],
-        ["Mittarinumero", bill.meter_id],
     ]
     if customer.consumption_point:
         meta_rows.append(["Käyttöpaikka", customer.consumption_point])
+    meta_rows.append(["Mittarinumero", bill.meter_id])
+    meta_rows.append(["Henkilömäärä", str(customer.number_of_persons)])
 
     meta_data = [
         [Paragraph(lbl, small_grey), Paragraph(val, normal)] for lbl, val in meta_rows
