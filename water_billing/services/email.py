@@ -3,9 +3,11 @@ from __future__ import annotations
 import smtplib
 from contextlib import contextmanager
 from email import encoders
+from email.header import Header
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.utils import formataddr
 from pathlib import Path
 from typing import Generator, List, Tuple
 
@@ -59,7 +61,7 @@ def send_bill_email(
         due_date=cycle.due_date,
     )
     body = (
-        f"Hyvä asiakas,\n\n"
+        f"Hei!\n\n"
         f"Liitteenä laskutusjakson {format_date_fi(cycle.start_date)}–"
         f"{format_date_fi(cycle.end_date)} lasku.\n\n"
         f"Maksettava yhteensä: {format_amount_fi(bill.total_due)}\n"
@@ -76,13 +78,13 @@ def send_bill_email(
     )
 
     msg = MIMEMultipart()
-    msg["From"] = config.smtp_user
+    msg["From"] = formataddr((str(Header(ci.cooperative_name, "utf-8")), ci.email))
     msg["To"] = customer.email
     msg["Subject"] = subject
     msg.attach(MIMEText(body, "plain", "utf-8"))
     _attach_pdf(msg, pdf_path)
 
-    server.sendmail(config.smtp_user, customer.email, msg.as_string())
+    server.sendmail(ci.email, customer.email, msg.as_string())
 
 
 def send_summary_email(
@@ -150,7 +152,7 @@ def send_all_bills(
                     config, bill, pdf_path, general_info, customer, server
                 )
                 succeeded.append(bill.customer_name)
-            except smtplib.SMTPException:
-                failed.append(bill.customer_name)
+            except Exception as exc:
+                failed.append(f"{bill.customer_name}: {exc}")
 
     return succeeded, failed
