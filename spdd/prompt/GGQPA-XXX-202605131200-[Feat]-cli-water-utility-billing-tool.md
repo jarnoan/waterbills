@@ -2,7 +2,7 @@
 
 ## Requirements
 
-Implement a Finnish-language command-line tool that automates the complete billing workflow for a small water utility cooperative (~20 customers): ingest meter readings and configuration CSVs, compute per-customer water consumption and bill amounts, generate Finnish-standard bill PDFs with barcodes and virtual barcodes, email bills to customers, and produce a merged paper-bill PDF and treasurer billing summary. All user-facing text (CLI option names, help strings, CSV column headers, PDF content, email subject/body) must be in Finnish; source code identifiers in English. Data lives in CSV files on a local filesystem mounted from Google Drive. The project must include a Finnish-language `README.md` covering the billing workflow, all CSV file formats with column specifications, `.env` setup instructions, and cold-start seeding requirements. A fifth subcommand `uusi` must provide an interactive terminal wizard that guides the user through a complete billing cycle end-to-end: collecting and validating all required input files, generating the bills CSV, reviewing computed values, generating PDFs, and publishing — handling both first-run seeding and regular cycle setup.
+Implement a Finnish-language command-line tool that automates the complete billing workflow for a small water utility cooperative (~20 customers): ingest meter readings and configuration CSVs, compute per-customer water consumption and bill amounts, generate Finnish-standard bill PDFs with barcodes and virtual barcodes, email bills to customers, and produce a merged paper-bill PDF and treasurer billing summary. All user-facing text (CLI option names, help strings, CSV column headers, PDF content, email subject/body) must be in Finnish; source code identifiers in English. Data lives in CSV files on a local filesystem mounted from Google Drive. The project must include a Finnish-language `README.md` covering the billing workflow, all CSV file formats with column specifications, `.env` setup instructions, and cold-start seeding requirements. The tool is run once per billing cycle, which typically spans two calendar months; the `--kuukausi` option identifies the **last** month of that period. A fifth subcommand `uusi` must provide an interactive terminal wizard that guides the user through a complete billing cycle end-to-end: collecting and validating all required input files, generating the bills CSV, reviewing computed values, generating PDFs, and publishing — handling both first-run seeding and regular cycle setup.
 
 ## Entities
 
@@ -130,7 +130,7 @@ BillingSummary "1" -- "0..*" Bill : aggregates
 
 1. CLI Architecture:
    - Use `typer` for Finnish-language CLI with four subcommands: `lasku` (generate bills CSV), `pdf` (generate bill PDFs), `julkaise` (publish — paper PDF + customer emails + yhteenveto PDF to treasurer), `uusi` (interactive wizard — full cycle setup through publish in one guided session)
-   - Each subcommand accepts `--vuosi` (year), `--kuukausi` (two-digit month of cycle end), and `--data-hakemisto` (data root path); together `--vuosi` and `--kuukausi` identify the billing run folder `<data_root>/<year>/<year>-<MM>/`
+   - Each subcommand accepts `--vuosi` (year), `--kuukausi` (integer 1–12, the last month of the billing period), and `--data-hakemisto` (data root path); together `--vuosi` and `--kuukausi` identify the billing run folder `<data_root>/<year>/<year>-<MM>/`
    - `julkaise` additionally requires SMTP credentials from `.env`; fail early with Finnish error if missing
    - Load `.env` via `python-dotenv` at startup
 
@@ -461,7 +461,7 @@ README.md
 
 ### Create CLI Entry Point — `cli/commands.py`
 1. `app = typer.Typer(name="laskutus", help="Vesiosuuskunnan laskutustyökalu")` 
-2. `@app.command("lasku")` options: `--vuosi: int = current year`, `--kuukausi: int` (required, 1–12), `--data-hakemisto: Path`:
+2. `@app.command("lasku")` options: `--vuosi: int = current year`, `--kuukausi: int` (required, 1–12; last month of the billing period), `--data-hakemisto: Path`:
    - Construct `run_dir = run_folder(data_root, vuosi, kuukausi)`; ensure run_dir exists (create if absent)
    - Load config; discover files using `find_with_fallback` and `run_dir`; read all inputs including prev and prev_prev lukemat; scan all laskut files for bill number counter
    - Validate (print warnings, raise on errors)
@@ -487,7 +487,15 @@ README.md
    **Phase 1 — yleiset**
    - Call `find_all_yleiset(data_root, run_dir, year)` to get ordered list of existing yleiset files
    - Attempt merge of all found files to build current values dict
-   - For each required key in canonical order (`jakso_alkaa`, `jakso_loppuu`, `eräpäivä`, `osuuskunnan_nimi`, `iban`, `y_tunnus`, `yhteyshenkilö`, `puhelin`, `sähköposti`, `päämittarinro`): display current value if present; prompt `"Muuta arvoa? (tyhjä = pidä nykyinen)"` — if user enters a non-empty string, use it; if key missing, prompt `"Anna arvo avaimelle {key}:"` (required, repeat until non-empty)
+   - Before the key loop, compute default dates from `vuosi` and `kuukausi` (using Python `calendar` module):
+     - `jakso_alkaa_default`: first day of the month preceding `kuukausi`; if `kuukausi == 1`, use `date(vuosi − 1, 12, 1)`; otherwise `date(vuosi, kuukausi − 1, 1)`; format as ISO date string (`YYYY-MM-DD`)
+     - `jakso_loppuu_default`: last day of `kuukausi` in `vuosi`, computed via `date(vuosi, kuukausi, calendar.monthrange(vuosi, kuukausi)[1])`; format as ISO date string
+   - For each required key in canonical order (`jakso_alkaa`, `jakso_loppuu`, `eräpäivä`, `osuuskunnan_nimi`, `iban`, `y_tunnus`, `yhteyshenkilö`, `puhelin`, `sähköposti`, `päämittarinro`):
+     - If key has an existing merged value: display it and prompt `"Muuta arvoa? (tyhjä = pidä nykyinen)"` — if user enters non-empty string, use it; else keep existing value
+     - If key is absent from merged dict:
+       - For `jakso_alkaa`: prompt `"Jakso alkaa (oletus: {jakso_alkaa_default}):"` — if user enters empty, use `jakso_alkaa_default`; accept non-empty input as override
+       - For `jakso_loppuu`: prompt `"Jakso loppuu (oletus: {jakso_loppuu_default}):"` — if user enters empty, use `jakso_loppuu_default`; accept non-empty input as override
+       - For all other keys: prompt `"Anna arvo avaimelle {key}:"` (required, repeat until non-empty)
    - If any value was changed or missing: write new yleiset CSV to current run folder with all key-value pairs; echo `"Yleiset-asetukset tallennettu."`
    - Else: echo `"Yleiset-asetukset muuttumattomia, ei uutta tiedostoa."`
    - Parse merged values into `GeneralInfo`
@@ -530,7 +538,7 @@ README.md
 
 ### Create README.md
 1. Write `README.md` in Finnish at the project root. Content must cover the following sections in order:
-   - **Yleiskuvaus**: What the tool is, who it is for (~20 customer water cooperative), and that it automates the bi-monthly billing cycle
+   - **Yleiskuvaus**: What the tool is, who it is for (~20 customer water cooperative), and that it automates the billing cycle which typically spans two calendar months; note that `--kuukausi` identifies the **last** month of the period
    - **Asennus**: Install via `pip install -e .`; copy `.env.example` to `.env` and fill in SMTP credentials and data root path; list all required `.env` variables (`DATA_ROOT`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_TLS`, `TREASURER_EMAIL`)
    - **Laskutustyönkulku**: The billing workflow as a numbered list matching the 8-step cycle — create/update `osakkaat` if changed; create/update `laskurivit` if changed; create `yleiset` for the cycle; create `lukemat` for the cycle; run `laskutus lasku` to generate `laskut` CSV; inspect and optionally edit `laskut` CSV; run `laskutus pdf` to generate bill PDFs; inspect PDFs; run `laskutus julkaise` to send emails, merge paper bills, and email `yhteenveto` to treasurer
    - **Komennot**: Table or list of all four subcommands (`laskutus uusi`, `laskutus lasku`, `laskutus pdf`, `laskutus julkaise`) with their options (`--vuosi`, `--kuukausi`, `--data-hakemisto`, `--ylikirjoita`, `--lähetä-uudelleen`) and a one-line Finnish description for each; note that `uusi` is the recommended entry point for new users and covers the entire workflow interactively
