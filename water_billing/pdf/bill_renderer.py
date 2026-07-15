@@ -227,7 +227,10 @@ def render_bill_pdf(
             f"{format_date_fi(cycle.end_date)}"
         )
         if item.application_rule == ApplicationRule.PER_CONSUMPTION:
-            period_text += f"\nLukemat {bill.prev_reading} – {bill.new_reading}"
+            readings_text = f"\nLukemat {bill.prev_reading} – {bill.new_reading}"
+            if bill.is_estimated:
+                readings_text += " (arvio)"
+            period_text += readings_text
         item_data.append([Paragraph(period_text, small_italic), "", "", "", "", "", ""])
 
     netto_total = sum(i.netto for i in bill.line_items)
