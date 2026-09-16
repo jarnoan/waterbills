@@ -98,9 +98,9 @@ def render_summary_pdf(summary: BillingSummary, output_path: Path) -> None:
             "Asiakkaiden yhteiskulutus (m³)",
             str(summary.customer_consumption_total),
         ],
-        ["Häviö (m³)", _val(summary.water_loss_m3)],
+        ["Hävikki (m³)", _val(summary.water_loss_m3)],
         [
-            "Häviö (%)",
+            "Hävikki (%)",
             _val(
                 summary.water_loss_percent,
                 lambda v: f"{v:.1f}".replace(".", ",") + " %",

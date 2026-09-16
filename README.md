@@ -113,7 +113,7 @@ Tiedostot nimetään muodossa `VVVVKKPP-tyyppi[-lisätieto].ext`.
 | `laskut` | tuloste | Lasketut laskut asiakaskohtaisesti |
 | `lasku` | tuloste | Yksittäisen asiakkaan PDF-lasku |
 | `paperilaskut` | tuloste | Kaikki paperilaskut yhdistetty yhteen PDF:ään |
-| `yhteenveto` | tuloste | Tilintarkastajan yhteenveto-PDF laskuista ja vesihäviöstä |
+| `yhteenveto` | tuloste | Tilintarkastajan yhteenveto-PDF laskuista ja vesihävikistä |
 
 ## CSV-tiedostomuodot
 
