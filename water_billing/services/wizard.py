@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import calendar
 import csv
+import shutil
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -386,9 +387,19 @@ def run_cycle_wizard(
         )
         return
 
+    if osakkaat_path.parent != run_dir:
+        # Give each period its own osakkaat snapshot to edit, instead of
+        # editing (or leaving untouched) a file that lives in an older
+        # period's folder.
+        copied = run_dir / f"{cycle.start_date.strftime('%Y%m%d')}-osakkaat.csv"
+        copied.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(osakkaat_path, copied)
+        typer.echo(f"Osakkaat-tiedosto kopioitu edellisestä jaksosta: {copied.name}")
+        osakkaat_path = copied
+
     typer.echo(f"Osakkaat: {osakkaat_path.name}")
     if typer.confirm("Onko osakkaat-tiedostossa muutoksia?", default=False):
-        typer.echo("Päivitä tiedosto ja käynnistä 'uusi' uudelleen.")
+        typer.echo(f"Päivitä tiedosto {osakkaat_path} ja käynnistä 'uusi' uudelleen.")
         return
 
     customers = read_customers(osakkaat_path)
