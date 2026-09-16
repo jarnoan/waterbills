@@ -184,3 +184,39 @@ def email_bill_pdf_paths(
             )
         paths.add(pdf_dir / f"{stem}.pdf")
     return paths
+
+
+def sort_bill_pdfs_for_print(
+    pdf_paths: List[Path],
+    bills: List[Bill],
+    customers: List[Customer],
+    pdf_dir: Path,
+    cycle_end_date,
+) -> List[Path]:
+    """Sort PDF paths by tulostusjärjestys, falling back to alphabetical."""
+    customer_by_name = {c.name: c for c in customers}
+    path_order: dict = {}
+    for bill in bills:
+        customer = customer_by_name.get(bill.customer_name)
+        if customer is None:
+            continue
+        name_parts = bill.customer_name.split()
+        if len(name_parts) >= 2:
+            stem = (
+                f"{cycle_end_date.strftime('%Y%m%d')}"
+                f"-lasku-{name_parts[-1].lower()}-{name_parts[0].lower()}"
+            )
+        else:
+            stem = (
+                f"{cycle_end_date.strftime('%Y%m%d')}"
+                f"-lasku-{bill.customer_name.lower().replace(' ', '-')}"
+            )
+        path_order[pdf_dir / f"{stem}.pdf"] = customer.print_order
+
+    def _key(p: Path):
+        order = path_order.get(p)
+        parts = p.stem.split("-")
+        alpha = (parts[3], parts[2]) if len(parts) >= 4 else (p.stem, "")
+        return (order if order is not None else 9999, alpha)
+
+    return sorted(pdf_paths, key=_key)

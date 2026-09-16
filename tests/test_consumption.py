@@ -24,6 +24,7 @@ def _customer(name: str, meter_id: str = "M1") -> Customer:
         number_of_persons=1,
         bank_account=None,
         consumption_point=None,
+        print_order=None,
     )
 
 
@@ -86,6 +87,7 @@ def test_inactive_customer_skipped():
         number_of_persons=1,
         bank_account=None,
         consumption_point=None,
+        print_order=None,
     )
     result = compute_consumptions([inactive], [], [], [], date(2025, 6, 30))
     assert result == []

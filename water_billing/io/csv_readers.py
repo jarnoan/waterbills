@@ -37,6 +37,8 @@ def read_customers(path: Path) -> List[Customer]:
                 left = date.fromisoformat(row["lähtenyt"].strip())
             bank_account = row.get("tilinumero", "").strip() or None
             consumption_point = row.get("kulutuspiste", "").strip() or None
+            _print_order_raw = row.get("tulostusjärjestys", "").strip()
+            print_order = int(_print_order_raw) if _print_order_raw else None
             customers.append(
                 Customer(
                     name=row["nimi"].strip(),
@@ -53,6 +55,7 @@ def read_customers(path: Path) -> List[Customer]:
                     number_of_persons=int(row["henkilömäärä"].strip()),
                     bank_account=bank_account,
                     consumption_point=consumption_point,
+                    print_order=print_order,
                 )
             )
     return customers

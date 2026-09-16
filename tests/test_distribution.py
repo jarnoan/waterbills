@@ -28,6 +28,7 @@ def _customer(name: str, active: bool = True) -> Customer:
         number_of_persons=1,
         bank_account=None,
         consumption_point=None,
+        print_order=None,
     )
 
 

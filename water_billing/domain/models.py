@@ -22,6 +22,7 @@ class Customer:
     number_of_persons: int
     bank_account: Optional[str]
     consumption_point: Optional[str]
+    print_order: Optional[int]
 
     def is_active(self) -> bool:
         return bool(self.meter_id.strip())
