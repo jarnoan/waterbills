@@ -72,8 +72,8 @@ _OSAKKAAT_HEADER = (
 )
 
 
-def _write_yleiset(run_dir: Path, values: dict, cycle_start_date: date) -> Path:
-    filename = f"{cycle_start_date.strftime('%Y%m%d')}-yleiset.csv"
+def _write_yleiset(run_dir: Path, values: dict, cycle_end_date: date) -> Path:
+    filename = f"{cycle_end_date.strftime('%Y%m%d')}-yleiset.csv"
     out = run_dir / filename
     out.parent.mkdir(parents=True, exist_ok=True)
     with open(out, "w", encoding="utf-8-sig", newline="") as f:
@@ -360,7 +360,7 @@ def run_cycle_wizard(
     cycle_end_date = date.fromisoformat(updated["jakso_loppuu"])
 
     if changed:
-        out = _write_yleiset(run_dir, updated, cycle_start_date)
+        out = _write_yleiset(run_dir, updated, cycle_end_date)
         typer.echo(f"Yleiset-asetukset tallennettu: {out.name}")
     else:
         typer.echo("Yleiset-asetukset muuttumattomia, ei uutta tiedostoa.")

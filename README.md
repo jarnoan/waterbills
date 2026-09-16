@@ -86,7 +86,7 @@ Laskutusdata tallennetaan kaksitasoiseen kansiorakenteeseen:
 DATA_ROOT/
   2026/
     2026-02/     ← helmikuun laskutusjakso
-      20260101-yleiset.csv          ← uusi-ohjaaja luo (jakson alkupäivä, ei lisätietoa)
+      20260228-yleiset.csv          ← uusi-ohjaaja luo (jakson loppupäivä, ei lisätietoa)
       20260101-osakkaat.csv         ← uusi-ohjaaja luo (jakson alkupäivä, ei lisätietoa)
       20260228-lukemat-uudet.csv    ← jakson loppupäivä + lisätieto
       20260228-laskut-uudet.csv
@@ -102,7 +102,8 @@ DATA_ROOT/
 
 Tiedostot nimetään muodossa `VVVVKKPP-tyyppi[-lisätieto].ext`.
 - Komennot `lasku`, `pdf` ja `julkaise` käyttävät jakson **loppupäivää** tiedostonimessä.
-- `uusi`-ohjaajan luomat `yleiset`- ja `osakkaat`-tiedostot käyttävät jakson **alkupäivää** eikä niihin lisätä lisätietoa.
+- `uusi`-ohjaajan luoma `yleiset`-tiedosto käyttää jakson **loppupäivää**, kuten muutkin tulostetiedostot, eikä siihen lisätä lisätietoa.
+- `uusi`-ohjaajan luoma `osakkaat`-tiedosto käyttää jakson **alkupäivää** eikä siihen lisätä lisätietoa.
 
 | Tiedostotyyppi | Suunta | Kuvaus |
 |----------------|--------|--------|
