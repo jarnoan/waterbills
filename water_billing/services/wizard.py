@@ -766,7 +766,11 @@ def run_cycle_wizard(
             f" {format_amount_fi(b.total_due):>10}"
         )
     total = sum(b.total_due for b in bills)
-    typer.echo(f"\nLaskuja: {len(bills)}, yhteensä: {format_amount_fi(total)} (A = kulutus arvioitu)")
+    total_consumption = sum(b.consumption for b in bills)
+    typer.echo(
+        f"\nLaskuja: {len(bills)}, kulutus yhteensä: {total_consumption} m³, "
+        f"yhteensä: {format_amount_fi(total)} (A = kulutus arvioitu)"
+    )
 
     laskut_out = output_path(run_dir, cycle.end_date, "laskut", "", "csv")
     write_bills(laskut_out, bills, overwrite=True)
