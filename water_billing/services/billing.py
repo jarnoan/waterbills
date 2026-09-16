@@ -134,14 +134,14 @@ def get_next_bill_number(
     all_laskut_paths: List[Path],
     initial_bill_number: Optional[int] = None,
 ) -> int:
-    if initial_bill_number is not None:
-        return initial_bill_number
     if all_laskut_paths:
         all_numbers = []
         for path in all_laskut_paths:
             all_numbers.extend(read_bill_numbers(path))
         if all_numbers:
             return max(all_numbers) + 1
+    if initial_bill_number is not None:
+        return initial_bill_number
     return 1
 
 
