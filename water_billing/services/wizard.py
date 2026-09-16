@@ -248,7 +248,16 @@ def run_cycle_wizard(
             ).isoformat()
         other_required_keys = _OTHER_REQUIRED_KEYS
 
-    typer.echo(f"Laskutusjakso: {jakso_alkaa_default} – {jakso_loppuu_default}\n")
+    initial_bill_number = None
+    if "aloituslaskunumero" in resolved:
+        try:
+            initial_bill_number = int(resolved["aloituslaskunumero"])
+        except ValueError:
+            pass
+    next_bill_number = get_next_bill_number(find_all_laskut(root), initial_bill_number)
+
+    typer.echo(f"Laskutusjakso: {jakso_alkaa_default} – {jakso_loppuu_default}")
+    typer.echo(f"Seuraava laskunumero: {next_bill_number}\n")
 
     # Display resolved values
     if resolved:
