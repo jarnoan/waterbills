@@ -186,6 +186,7 @@ Huom: `eräpäivä` **ei** ole yleiset-avain — se lasketaan automaattisesti `l
 | `päämittarin_perusmaksu` | desimaaliluku | ei | Päämittarin perusmaksu **yhteensä** euroina ilman ALV:tä; jaetaan tasan aktiivisten asiakkaiden kesken; käytetään oletusarvona laskurivejä luotaessa `uusi`-ohjaajassa |
 | `vesihinta` | desimaaliluku | ei | Vesihinta euroina per kuutiometri ilman ALV:tä; käytetään oletusarvona laskurivejä luotaessa `uusi`-ohjaajassa |
 | `aloituslaskunumero` | kokonaisluku | ei | Ensimmäisen laskun numero osuuskunnan ensimmäisessä laskutusajossa. Ohitetaan automaattisesti, kun aiempia `laskut`-tiedostoja on olemassa — tällöin numerointi jatkuu suurimmasta aiemmasta laskunumerosta + 1. Cascatuu vanhemmista yleiset-tiedostoista, mutta on käytännössä merkityksellinen vain kerran. |
+| `viesti` | teksti | ei | Vapaamuotoinen viesti, näytetään laskun alalaidassa |
 
 ### lukemat
 

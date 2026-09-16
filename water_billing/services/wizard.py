@@ -47,11 +47,11 @@ _YLEISET_KEY_ORDER = [
     "osuuskunnan_nimi", "iban", "bic", "osoite", "www", "y_tunnus",
     "yhteyshenkilö", "puhelin", "sähköposti", "päämittarinro",
     "rahastonhoitajan_sähköposti", "päämittarin_kulutuspiste",
-    "päämittarin_perusmaksu", "vesihinta", "aloituslaskunumero",
+    "päämittarin_perusmaksu", "vesihinta", "aloituslaskunumero", "viesti",
 ]
 _OPTIONAL_YLEISET_KEYS = {
     "laskupäivä", "bic", "osoite", "www", "päämittarin_kulutuspiste",
-    "päämittarin_perusmaksu", "vesihinta", "aloituslaskunumero",
+    "päämittarin_perusmaksu", "vesihinta", "aloituslaskunumero", "viesti",
 }
 _REQUIRED_YLEISET_KEYS = [k for k in _YLEISET_KEY_ORDER if k not in _OPTIONAL_YLEISET_KEYS]
 _PERIOD_KEYS = {"jakso_alkaa", "jakso_loppuu"}
@@ -176,6 +176,12 @@ def _prompt_yleiset_key(key: str, jakso_alkaa_default: str, jakso_loppuu_default
             except ValueError:
                 typer.echo("  Varoitus: virheellinen kokonaisluku, ohitetaan.")
         return None
+    elif key == "viesti":
+        val = typer.prompt(
+            "  Viesti (valinnainen, näytetään laskun alalaidassa, tyhjä = ei viestiä)",
+            default="",
+        )
+        return val.strip() if val.strip() else None
     else:
         val = ""
         while not val.strip():
