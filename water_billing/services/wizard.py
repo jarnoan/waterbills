@@ -28,7 +28,7 @@ from water_billing.io.file_discovery import (
     parse_date_prefix,
 )
 from water_billing.pdf.bill_renderer import format_amount_fi, format_date_fi, render_bill_pdf
-from water_billing.pdf.merger import merge_pdfs, sort_bill_pdfs_alphabetically
+from water_billing.pdf.merger import merge_pdfs
 from water_billing.pdf.summary_renderer import render_summary_pdf
 from water_billing.services.billing import (
     compute_consumptions,
@@ -36,9 +36,10 @@ from water_billing.services.billing import (
     detect_ownership_transfers,
     generate_bills,
     get_next_bill_number,
+    next_billing_period,
     split_bills_for_transfer,
 )
-from water_billing.services.email import email_bill_pdf_paths, send_all_bills, send_summary_email
+from water_billing.services.email import email_bill_pdf_paths, send_all_bills, send_summary_email, sort_bill_pdfs_for_print
 from water_billing.services.validation import validate_inputs
 
 _YLEISET_KEY_ORDER = [
@@ -53,6 +54,11 @@ _OPTIONAL_YLEISET_KEYS = {
     "päämittarin_perusmaksu", "vesihinta", "aloituslaskunumero",
 }
 _REQUIRED_YLEISET_KEYS = [k for k in _YLEISET_KEY_ORDER if k not in _OPTIONAL_YLEISET_KEYS]
+_PERIOD_KEYS = {"jakso_alkaa", "jakso_loppuu"}
+# jakso_alkaa/jakso_loppuu are always recomputed fresh for each new cycle
+# (see run_cycle_wizard), so they are excluded from the "other settings
+# unchanged?" check below.
+_OTHER_REQUIRED_KEYS = [k for k in _REQUIRED_YLEISET_KEYS if k not in _PERIOD_KEYS]
 
 _OSAKKAAT_HEADER = (
     "nimi,katuosoite,postinumero,postitoimipaikka,sähköposti,puhelin,"
@@ -184,6 +190,9 @@ def run_cycle_wizard(
 
     # Phase 1 — yleiset
     typer.echo("--- Vaihe 1: Yleiset asetukset ---")
+    is_resume = run_dir.exists() and (
+        any(run_dir.glob("*-yleiset-*.csv")) or any(run_dir.glob("*-yleiset.csv"))
+    )
     yleiset_paths = find_all_yleiset(root, run_dir, year)
     resolved: dict = {}
     for path in yleiset_paths:
@@ -197,17 +206,41 @@ def run_cycle_wizard(
         except Exception:
             pass
 
-    if month == 1:
-        jakso_alkaa_default = date(year - 1, 12, 1).isoformat()
+    if is_resume:
+        # This period's own yleiset already exists (resuming an in-progress
+        # cycle) — keep its jakso_alkaa/jakso_loppuu like any other setting.
+        jakso_alkaa_default = resolved.get("jakso_alkaa", "")
+        jakso_loppuu_default = resolved.get("jakso_loppuu", "")
+        other_required_keys = _REQUIRED_YLEISET_KEYS
     else:
-        jakso_alkaa_default = date(year, month - 1, 1).isoformat()
-    jakso_loppuu_default = date(
-        year, month, calendar.monthrange(year, month)[1]
-    ).isoformat()
+        # jakso_alkaa/jakso_loppuu in `resolved` describe the *previous*
+        # cycle (each yleiset file is a full snapshot of its own period).
+        # They must never be silently carried over unchanged into a new
+        # cycle, so they are pulled out here and always recomputed fresh.
+        prev_jakso_loppuu = resolved.pop("jakso_loppuu", None)
+        resolved.pop("jakso_alkaa", None)
+
+        if prev_jakso_loppuu:
+            next_start, next_end = next_billing_period(date.fromisoformat(prev_jakso_loppuu))
+            jakso_alkaa_default = next_start.isoformat()
+            jakso_loppuu_default = next_end.isoformat()
+        elif month == 1:
+            jakso_alkaa_default = date(year - 1, 12, 1).isoformat()
+            jakso_loppuu_default = date(
+                year, month, calendar.monthrange(year, month)[1]
+            ).isoformat()
+        else:
+            jakso_alkaa_default = date(year, month - 1, 1).isoformat()
+            jakso_loppuu_default = date(
+                year, month, calendar.monthrange(year, month)[1]
+            ).isoformat()
+        other_required_keys = _OTHER_REQUIRED_KEYS
+
+    typer.echo(f"Laskutusjakso: {jakso_alkaa_default} – {jakso_loppuu_default}\n")
 
     # Display resolved values
     if resolved:
-        typer.echo("\nNykyiset yleiset-asetukset:")
+        typer.echo("Nykyiset yleiset-asetukset:")
         for key in _YLEISET_KEY_ORDER:
             if key in resolved:
                 display_val = resolved[key]
@@ -217,7 +250,7 @@ def run_cycle_wizard(
         typer.echo("")
 
     # Ask about changes
-    all_required_present = all(k in resolved for k in _REQUIRED_YLEISET_KEYS)
+    all_required_present = all(k in resolved for k in other_required_keys)
     if resolved and all_required_present:
         wants_changes = typer.confirm(
             "Haluatko muuttaa joitain yleiset-asetuksia?", default=False
@@ -733,9 +766,10 @@ def run_cycle_wizard(
 
     paper_out = run_dir / f"{cycle.end_date.strftime('%Y%m%d')}-paperilaskut.pdf"
     emailed = email_bill_pdf_paths(bills, customers, run_dir, cycle.end_date)
-    paper_pdfs = sort_bill_pdfs_alphabetically(
+    paper_pdfs = sort_bill_pdfs_for_print(
         [p for p in run_dir.glob(f"{cycle.end_date.strftime('%Y%m%d')}-lasku-*.pdf")
-         if p not in emailed]
+         if p not in emailed],
+        bills, customers, run_dir, cycle.end_date,
     )
     if paper_pdfs:
         merge_pdfs(paper_pdfs, paper_out)

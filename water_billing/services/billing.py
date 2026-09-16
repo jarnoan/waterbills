@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import date
+import calendar
+from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -25,6 +26,22 @@ from water_billing.domain.rules import (
 )
 from water_billing.encoding.reference_number import compute_reference_number
 from water_billing.io.csv_readers import read_bill_numbers, read_meter_readings
+
+
+def next_billing_period(prev_end_date: date) -> Tuple[date, date]:
+    """Compute the next two-month billing period following prev_end_date.
+
+    The period starts the day after prev_end_date and runs to the end of
+    the following calendar month.
+    """
+    start = prev_end_date + timedelta(days=1)
+    end_month = start.month + 1
+    end_year = start.year
+    if end_month > 12:
+        end_month -= 12
+        end_year += 1
+    end = date(end_year, end_month, calendar.monthrange(end_year, end_month)[1])
+    return start, end
 
 
 def compute_consumptions(

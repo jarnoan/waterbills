@@ -30,7 +30,7 @@ from water_billing.io.file_discovery import (
     run_folder,
 )
 from water_billing.pdf.bill_renderer import render_bill_pdf
-from water_billing.pdf.merger import merge_pdfs, sort_bill_pdfs_alphabetically
+from water_billing.pdf.merger import merge_pdfs
 from water_billing.pdf.summary_renderer import render_summary_pdf
 from water_billing.services.billing import (
     compute_consumptions,
@@ -38,9 +38,10 @@ from water_billing.services.billing import (
     detect_ownership_transfers,
     generate_bills,
     get_next_bill_number,
+    next_billing_period,
     split_bills_for_transfer,
 )
-from water_billing.services.email import email_bill_pdf_paths, send_all_bills, send_summary_email
+from water_billing.services.email import email_bill_pdf_paths, send_all_bills, send_summary_email, sort_bill_pdfs_for_print
 from water_billing.services.validation import validate_inputs
 
 app = typer.Typer(name="laskutus", help="Vesiosuuskunnan laskutustyökalu")
@@ -55,10 +56,24 @@ def _handle_unexpected(exc: Exception) -> None:
     raise typer.Exit(2)
 
 
+def _current_cycle_month(root: Path, vuosi: int) -> int:
+    """Find the end month of the most recently set-up billing cycle."""
+    dummy_run_dir = root / str(vuosi) / f"{vuosi}-00"
+    yleiset_paths = find_all_yleiset(root, dummy_run_dir, vuosi)
+    if not yleiset_paths:
+        raise BillingError(
+            "Nykyistä laskutusjaksoa ei löydy. Anna --kuukausi."
+        )
+    general_info = read_general_info(yleiset_paths)
+    return general_info.billing_cycle.end_date.month
+
+
 @app.command("lasku")
 def lasku(
     vuosi: int = typer.Option(date.today().year, "--vuosi", help="Laskutusvuosi"),
-    kuukausi: int = typer.Option(..., "--kuukausi", help="Jakson loppukuukausi (1–12)"),
+    kuukausi: Optional[int] = typer.Option(
+        None, "--kuukausi", help="Jakson loppukuukausi (1–12, oletus: nykyinen laskutusjakso)"
+    ),
     data_hakemisto: Optional[Path] = typer.Option(
         None, "--data-hakemisto", help="Datatiedostojen juurihakemisto"
     ),
@@ -70,6 +85,8 @@ def lasku(
     try:
         config = load_config(data_hakemisto)
         root = config.data_root
+        if kuukausi is None:
+            kuukausi = _current_cycle_month(root, vuosi)
         run_dir = run_folder(root, vuosi, kuukausi)
         run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -142,7 +159,9 @@ def lasku(
 @app.command("pdf")
 def pdf(
     vuosi: int = typer.Option(date.today().year, "--vuosi", help="Laskutusvuosi"),
-    kuukausi: int = typer.Option(..., "--kuukausi", help="Jakson loppukuukausi (1–12)"),
+    kuukausi: Optional[int] = typer.Option(
+        None, "--kuukausi", help="Jakson loppukuukausi (1–12, oletus: nykyinen laskutusjakso)"
+    ),
     data_hakemisto: Optional[Path] = typer.Option(
         None, "--data-hakemisto", help="Datatiedostojen juurihakemisto"
     ),
@@ -151,6 +170,8 @@ def pdf(
     try:
         config = load_config(data_hakemisto)
         root = config.data_root
+        if kuukausi is None:
+            kuukausi = _current_cycle_month(root, vuosi)
         run_dir = run_folder(root, vuosi, kuukausi)
 
         yleiset_paths = find_all_yleiset(root, run_dir, vuosi)
@@ -230,7 +251,9 @@ def pdf(
 @app.command("julkaise")
 def julkaise(
     vuosi: int = typer.Option(date.today().year, "--vuosi", help="Laskutusvuosi"),
-    kuukausi: int = typer.Option(..., "--kuukausi", help="Jakson loppukuukausi (1–12)"),
+    kuukausi: Optional[int] = typer.Option(
+        None, "--kuukausi", help="Jakson loppukuukausi (1–12, oletus: nykyinen laskutusjakso)"
+    ),
     data_hakemisto: Optional[Path] = typer.Option(
         None, "--data-hakemisto", help="Datatiedostojen juurihakemisto"
     ),
@@ -246,6 +269,8 @@ def julkaise(
         config = load_config(data_hakemisto)
         require_smtp_config(config)
         root = config.data_root
+        if kuukausi is None:
+            kuukausi = _current_cycle_month(root, vuosi)
         run_dir = run_folder(root, vuosi, kuukausi)
 
         yleiset_paths = find_all_yleiset(root, run_dir, vuosi)
@@ -297,9 +322,10 @@ def julkaise(
             )
 
         emailed = email_bill_pdf_paths(bills, customers, run_dir, cycle.end_date)
-        paper_pdfs = sort_bill_pdfs_alphabetically(
+        paper_pdfs = sort_bill_pdfs_for_print(
             [p for p in run_dir.glob(f"{cycle.end_date.strftime('%Y%m%d')}-lasku-*.pdf")
-             if p not in emailed]
+             if p not in emailed],
+            bills, customers, run_dir, cycle.end_date,
         )
         merge_pdfs(paper_pdfs, paper_out)
         typer.echo(f"Paperilaskut: {paper_out}")
@@ -338,8 +364,14 @@ def julkaise(
 
 @app.command("uusi")
 def uusi(
-    vuosi: int = typer.Option(date.today().year, "--vuosi", help="Laskutusvuosi"),
-    kuukausi: int = typer.Option(..., "--kuukausi", help="Jakson loppukuukausi (1–12)"),
+    vuosi: Optional[int] = typer.Option(
+        None, "--vuosi", help="Laskutusvuosi (oletus: seuraava jakso edellisen jälkeen)"
+    ),
+    kuukausi: Optional[int] = typer.Option(
+        None,
+        "--kuukausi",
+        help="Jakson loppukuukausi (1–12, oletus: seuraava jakso edellisen jälkeen)",
+    ),
     data_hakemisto: Optional[Path] = typer.Option(
         None, "--data-hakemisto", help="Datatiedostojen juurihakemisto"
     ),
@@ -349,6 +381,32 @@ def uusi(
         from water_billing.services.wizard import run_cycle_wizard
         config = load_config(data_hakemisto)
         root = config.data_root
+        if kuukausi is None:
+            search_year = vuosi if vuosi is not None else date.today().year
+            dummy_run_dir = root / str(search_year) / f"{search_year}-00"
+            yleiset_paths = find_all_yleiset(root, dummy_run_dir, search_year)
+            if not yleiset_paths:
+                raise BillingError(
+                    "Aiempaa laskutusjaksoa ei löydy. Anna --vuosi ja --kuukausi "
+                    "ensimmäistä laskutuskertaa varten."
+                )
+            latest_path = yleiset_paths[0]
+            latest_cycle = read_general_info([latest_path]).billing_cycle
+            # A cycle is only "done" once its summary PDF exists (the last
+            # artifact the wizard produces) — otherwise re-running 'uusi'
+            # without arguments should resume it, not skip past it.
+            latest_is_complete = any(latest_path.parent.glob("*-yhteenveto.pdf"))
+            if latest_is_complete:
+                _, next_end = next_billing_period(latest_cycle.end_date)
+                if vuosi is None:
+                    vuosi = next_end.year
+                kuukausi = next_end.month
+            else:
+                if vuosi is None:
+                    vuosi = latest_cycle.end_date.year
+                kuukausi = latest_cycle.end_date.month
+        elif vuosi is None:
+            vuosi = date.today().year
         run_dir = run_folder(root, vuosi, kuukausi)
         run_dir.mkdir(parents=True, exist_ok=True)
         run_cycle_wizard(config, run_dir, vuosi, kuukausi)

@@ -59,17 +59,21 @@ Tarvittavat `.env`-muuttujat:
 
 | Komento | Kuvaus |
 |---------|--------|
-| `laskutus uusi --kuukausi KK` | Interaktiivinen ohjattu laskutuskierto alusta loppuun — kerää syötteet, laskee laskut, luo PDF:t ja julkaisee |
-| `laskutus lasku --kuukausi KK` | Laskee kulutukset ja kirjoittaa laskut CSV-tiedostoon |
-| `laskutus pdf --kuukausi KK` | Luo PDF-laskut olemassa olevasta laskut-CSV:stä |
-| `laskutus julkaise --kuukausi KK` | Lähettää sähköpostit, luo paperilaskut ja lähettää yhteenvedon tilintarkastajalle |
+| `laskutus uusi` | Interaktiivinen ohjattu laskutuskierto alusta loppuun — kerää syötteet, laskee laskut, luo PDF:t ja julkaisee |
+| `laskutus lasku` | Laskee kulutukset ja kirjoittaa laskut CSV-tiedostoon |
+| `laskutus pdf` | Luo PDF-laskut olemassa olevasta laskut-CSV:stä |
+| `laskutus julkaise` | Lähettää sähköpostit, luo paperilaskut ja lähettää yhteenvedon tilintarkastajalle |
+
+`--kuukausi` ei ole pakollinen millekään komennolle:
+- `laskutus uusi`: oletuksena seuraava kaksikuukautinen jakso edellisen jakson jälkeen (alkaa edellisen jakson päättymispäivää seuraavana päivänä, päättyy toisen kuukauden lopussa). Jos edellinen jakso on vielä kesken (yhteenveto-PDF puuttuu), ohjaaja jatkaa sitä samaa jaksoa sen sijaan, että hyppäisi seuraavaan.
+- `laskutus lasku` / `pdf` / `julkaise`: oletuksena nykyisen (viimeksi luodun) laskutusjakson loppukuukausi.
 
 Kaikki komennot tukevat seuraavia valitsimia:
 
 | Valitsin | Oletusarvo | Kuvaus |
 |----------|-----------|--------|
-| `--vuosi` | Kuluva vuosi | Laskutusvuosi |
-| `--kuukausi` | Pakollinen | Jakson loppukuukausi (1–12) |
+| `--vuosi` | Kuluva vuosi (`uusi`: seuraavan jakson vuosi) | Laskutusvuosi |
+| `--kuukausi` | Ks. yllä | Jakson loppukuukausi (1–12) |
 | `--data-hakemisto` | `.env`-tiedoston `DATA_ROOT` | Datatiedostojen juurihakemisto |
 | `--ylikirjoita` | ei | Ylikirjoittaa olemassa olevat tulostiedostot (`lasku`, `julkaise`) |
 | `--lähetä-uudelleen` | ei | Lähettää sähköpostit uudelleen jo lähetetyille (`julkaise`) |
@@ -193,7 +197,7 @@ Huom: `eräpäivä` **ei** ole yleiset-avain — se lasketaan automaattisesti `l
 
 ## Ensiajaminen
 
-**Suositeltava tapa:** Käynnistä `laskutus uusi --kuukausi KK`, joka havaitsee automaattisesti ensimmäisen laskutuskerran ja kerää alkutilanteen mittarilukemat interaktiivisesti. Ohjaaja tallentaa ne tiedostoon `VVVVKKPP-lukemat-alkutilanne.csv` (päivätty yhtä päivää ennen jakson alkua) ja jatkaa suoraan laskujen laskentaan.
+**Suositeltava tapa:** Käynnistä `laskutus uusi --vuosi VVVV --kuukausi KK` (ensimmäisellä kerralla ei ole edellistä jaksoa, josta oletusarvo voitaisiin päätellä, joten nämä on annettava), joka havaitsee automaattisesti ensimmäisen laskutuskerran ja kerää alkutilanteen mittarilukemat interaktiivisesti. Ohjaaja tallentaa ne tiedostoon `VVVVKKPP-lukemat-alkutilanne.csv` (päivätty yhtä päivää ennen jakson alkua) ja jatkaa suoraan laskujen laskentaan.
 
 **Manuaalinen tapa:** Luo siemenlukemat-tiedosto käsin. Se on `lukemat`-CSV, joka sisältää yhden rivin per aktiivinen osakas sekä rivin päämittarille **ennen** ensimmäistä laskutusjaksoa. Tiedoston päivämäärän tulee olla ennen jakson alkupäivää. Sijoita tiedosto hakemistoon `DATA_ROOT/<vuosi>/<vuosi>-<KK>/`.
 
