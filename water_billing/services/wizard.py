@@ -213,12 +213,14 @@ def run_cycle_wizard(
         jakso_loppuu_default = resolved.get("jakso_loppuu", "")
         other_required_keys = _REQUIRED_YLEISET_KEYS
     else:
-        # jakso_alkaa/jakso_loppuu in `resolved` describe the *previous*
-        # cycle (each yleiset file is a full snapshot of its own period).
-        # They must never be silently carried over unchanged into a new
-        # cycle, so they are pulled out here and always recomputed fresh.
+        # jakso_alkaa/jakso_loppuu/laskupäivä in `resolved` describe the
+        # *previous* cycle (each yleiset file is a full snapshot of its own
+        # period). They must never be silently carried over unchanged into
+        # a new cycle, so they are pulled out here and always recomputed
+        # fresh (laskupäivä defaults to today via _prompt_yleiset_key).
         prev_jakso_loppuu = resolved.pop("jakso_loppuu", None)
         resolved.pop("jakso_alkaa", None)
+        resolved.pop("laskupäivä", None)
 
         if prev_jakso_loppuu:
             next_start, next_end = next_billing_period(date.fromisoformat(prev_jakso_loppuu))
