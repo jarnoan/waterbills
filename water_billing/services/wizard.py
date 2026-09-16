@@ -59,6 +59,10 @@ _PERIOD_KEYS = {"jakso_alkaa", "jakso_loppuu"}
 # (see run_cycle_wizard), so they are excluded from the "other settings
 # unchanged?" check below.
 _OTHER_REQUIRED_KEYS = [k for k in _REQUIRED_YLEISET_KEYS if k not in _PERIOD_KEYS]
+# jakso_alkaa/jakso_loppuu/laskupäivä get their own summary line at the top
+# of the wizard (with the resolved/computed default already applied), so
+# they're left out of the generic "Nykyiset yleiset-asetukset" listing.
+_TOP_SUMMARY_KEYS = _PERIOD_KEYS | {"laskupäivä"}
 
 _OSAKKAAT_HEADER = (
     "nimi,katuosoite,postinumero,postitoimipaikka,sähköposti,puhelin,"
@@ -209,19 +213,22 @@ def run_cycle_wizard(
     skip_keys: set = set()
     if is_resume:
         # This period's own yleiset already exists (resuming an in-progress
-        # cycle) — keep its jakso_alkaa/jakso_loppuu like any other setting.
+        # cycle) — keep its jakso_alkaa/jakso_loppuu/laskupäivä like any
+        # other setting.
         jakso_alkaa_default = resolved.get("jakso_alkaa", "")
         jakso_loppuu_default = resolved.get("jakso_loppuu", "")
+        laskupaiva_default = resolved.get("laskupäivä") or date.today().isoformat()
         other_required_keys = _REQUIRED_YLEISET_KEYS
     else:
         # jakso_alkaa/jakso_loppuu/laskupäivä in `resolved` describe the
         # *previous* cycle (each yleiset file is a full snapshot of its own
         # period). They must never be silently carried over unchanged into
         # a new cycle, so they are pulled out here and always recomputed
-        # fresh (laskupäivä defaults to today via _prompt_yleiset_key).
+        # fresh below.
         prev_jakso_loppuu = resolved.pop("jakso_loppuu", None)
         resolved.pop("jakso_alkaa", None)
         resolved.pop("laskupäivä", None)
+        laskupaiva_default = date.today().isoformat()
 
         # aloituslaskunumero only matters for the very first billing run
         # ever (see get_next_bill_number). Once real laskut history exists
@@ -255,16 +262,21 @@ def run_cycle_wizard(
         except ValueError:
             pass
     next_bill_number = get_next_bill_number(find_all_laskut(root), initial_bill_number)
+    due_default = date.fromisoformat(laskupaiva_default) + timedelta(days=14)
 
     typer.echo(f"Laskutusjakso: {jakso_alkaa_default} – {jakso_loppuu_default}")
-    typer.echo(f"Seuraava laskunumero: {next_bill_number}\n")
+    typer.echo(f"Seuraava laskunumero: {next_bill_number}")
+    typer.echo(
+        f"Laskupäivä: {laskupaiva_default} (eräpäivä {due_default.strftime('%d.%m.%Y')})\n"
+    )
 
-    # Display resolved values
-    if resolved:
+    # Display resolved values (period fields already shown above)
+    other_resolved = {k: v for k, v in resolved.items() if k not in _TOP_SUMMARY_KEYS}
+    if other_resolved:
         typer.echo("Nykyiset yleiset-asetukset:")
         for key in _YLEISET_KEY_ORDER:
-            if key in resolved:
-                display_val = resolved[key]
+            if key in other_resolved:
+                display_val = other_resolved[key]
                 if key in ("päämittarin_perusmaksu", "vesihinta"):
                     display_val += " (alv 0%)"
                 typer.echo(f"  {key}: {display_val}")
@@ -280,14 +292,20 @@ def run_cycle_wizard(
         wants_changes = True
 
     updated: dict = dict(resolved)
-    changed = False
+    updated["jakso_alkaa"] = jakso_alkaa_default
+    updated["jakso_loppuu"] = jakso_loppuu_default
+    updated["laskupäivä"] = laskupaiva_default
+    # A genuinely new cycle always needs its own yleiset file, even if
+    # nothing else changed; resuming only writes one if something did.
+    changed = not is_resume
 
-    # Change loop — only runs if wants_changes, only for keys that already have values
+    # Change loop — only runs if wants_changes, offers every currently
+    # known setting (including the period fields set above) for editing.
     if wants_changes:
         for key in _YLEISET_KEY_ORDER:
-            if key not in resolved:
+            if key not in updated:
                 continue
-            current_val = resolved[key]
+            current_val = updated[key]
             display_val = current_val
             if key in ("päämittarin_perusmaksu", "vesihinta"):
                 display_val += " (alv 0%)"
@@ -302,11 +320,16 @@ def run_cycle_wizard(
                     due = date.fromisoformat(new_val.strip()) + timedelta(days=14)
                     typer.echo(f"  Eräpäivä: {due.strftime('%d.%m.%Y')}")
 
-    # Missing-key loop — always runs, for keys absent from the (possibly updated) dict
+    # Missing-key loop: required keys always run (a value is needed to
+    # proceed); optional keys only run once the user opted into reviewing
+    # settings — otherwise "no changes" would still trigger prompts for
+    # never-yet-set optional fields (e.g. BIC) every single time.
     for key in _YLEISET_KEY_ORDER:
         if key in updated or key in skip_keys:
             continue
         if key in _OPTIONAL_YLEISET_KEYS:
+            if not wants_changes:
+                continue
             result = _prompt_yleiset_key(key, jakso_alkaa_default, jakso_loppuu_default)
             if result is not None:
                 updated[key] = result
