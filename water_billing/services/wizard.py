@@ -206,6 +206,7 @@ def run_cycle_wizard(
         except Exception:
             pass
 
+    skip_keys: set = set()
     if is_resume:
         # This period's own yleiset already exists (resuming an in-progress
         # cycle) — keep its jakso_alkaa/jakso_loppuu like any other setting.
@@ -221,6 +222,15 @@ def run_cycle_wizard(
         prev_jakso_loppuu = resolved.pop("jakso_loppuu", None)
         resolved.pop("jakso_alkaa", None)
         resolved.pop("laskupäivä", None)
+
+        # aloituslaskunumero only matters for the very first billing run
+        # ever (see get_next_bill_number). Once real laskut history exists
+        # it's dead weight cascading forward from that first period's
+        # yleiset file, so drop it entirely instead of showing/carrying a
+        # stale number.
+        if find_all_laskut(root):
+            resolved.pop("aloituslaskunumero", None)
+            skip_keys.add("aloituslaskunumero")
 
         if prev_jakso_loppuu:
             next_start, next_end = next_billing_period(date.fromisoformat(prev_jakso_loppuu))
@@ -285,7 +295,7 @@ def run_cycle_wizard(
 
     # Missing-key loop — always runs, for keys absent from the (possibly updated) dict
     for key in _YLEISET_KEY_ORDER:
-        if key in updated:
+        if key in updated or key in skip_keys:
             continue
         if key in _OPTIONAL_YLEISET_KEYS:
             result = _prompt_yleiset_key(key, jakso_alkaa_default, jakso_loppuu_default)
