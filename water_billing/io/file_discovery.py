@@ -1,6 +1,6 @@
 from datetime import date
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from water_billing.domain.rules import BillingError
 
@@ -117,14 +117,17 @@ def find_previous_lukemats(
     current_month: int,
     before_date: date,
 ) -> List[Path]:
-    result: List[Path] = []
-
     all_folders = list_run_folders(data_root, current_year) + list_run_folders(
         data_root, current_year - 1
     )
 
+    # Collect every qualifying lukemat file across all folders and rank
+    # globally by date, rather than capping at one per folder — a period's
+    # own folder can legitimately hold two meaningful snapshots (e.g. the
+    # very first period's seed "-alkutilanne" reading plus its own final
+    # reading), both of which count as distinct previous readings.
+    candidates: List[Tuple[date, Path]] = []
     for folder in all_folders:
-        candidates = []
         for p in (
             list(folder.glob("*-lukemat-*.csv"))
             + list(folder.glob("*-lukemat.csv"))
@@ -132,11 +135,9 @@ def find_previous_lukemats(
             d = parse_date_prefix(p.name)
             if d is not None and d < before_date:
                 candidates.append((d, p))
-        if candidates:
-            candidates.sort(key=lambda x: x[0], reverse=True)
-            result.append(candidates[0][1])
-        if len(result) == 2:
-            break
+
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    result = [p for _, p in candidates[:2]]
 
     if not result:
         raise BillingError("Ei aikaisempia lukematietoja löydy")
