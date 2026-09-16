@@ -756,7 +756,7 @@ def run_cycle_wizard(
     )
     typer.echo(f"\n{header}")
     typer.echo("-" * len(header))
-    for b in sorted(bills, key=lambda x: x.customer_name):
+    for b in sorted(bills, key=lambda x: x.bill_number):
         marker = "A" if b.is_estimated else " "
         typer.echo(
             f"{b.bill_number:>6} {b.customer_name:<30} {b.consumption:>5} {marker}"

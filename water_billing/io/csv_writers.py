@@ -31,7 +31,7 @@ def write_bills(path: Path, bills: List[Bill], overwrite: bool = False) -> None:
     with open(path, "w", encoding="utf-8-sig", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=_HEADERS)
         writer.writeheader()
-        for b in bills:
+        for b in sorted(bills, key=lambda b: b.bill_number):
             perusmaksu = sum(
                 i.total for i in b.line_items
                 if i.application_rule == ApplicationRule.PER_ACTIVE_CUSTOMER
