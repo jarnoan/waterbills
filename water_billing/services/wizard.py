@@ -264,10 +264,14 @@ def run_cycle_wizard(
     next_bill_number = get_next_bill_number(find_all_laskut(root), initial_bill_number)
     due_default = date.fromisoformat(laskupaiva_default) + timedelta(days=14)
 
-    typer.echo(f"Laskutusjakso: {jakso_alkaa_default} – {jakso_loppuu_default}")
+    typer.echo(
+        f"Laskutusjakso: {format_date_fi(date.fromisoformat(jakso_alkaa_default))} – "
+        f"{format_date_fi(date.fromisoformat(jakso_loppuu_default))}"
+    )
     typer.echo(f"Seuraava laskunumero: {next_bill_number}")
     typer.echo(
-        f"Laskupäivä: {laskupaiva_default} (eräpäivä {due_default.strftime('%d.%m.%Y')})\n"
+        f"Laskupäivä: {format_date_fi(date.fromisoformat(laskupaiva_default))} "
+        f"(eräpäivä {format_date_fi(due_default)})\n"
     )
 
     # Display resolved values (period fields already shown above)
