@@ -87,7 +87,7 @@ DATA_ROOT/
   2026/
     2026-02/     ← helmikuun laskutusjakso
       20260228-yleiset.csv          ← uusi-ohjaaja luo (jakson loppupäivä, ei lisätietoa)
-      20260101-osakkaat.csv         ← uusi-ohjaaja luo (jakson alkupäivä, ei lisätietoa)
+      20260228-osakkaat.csv         ← uusi-ohjaaja luo (jakson loppupäivä, ei lisätietoa)
       20260228-lukemat-uudet.csv    ← jakson loppupäivä + lisätieto
       20260228-laskut-uudet.csv
       20260228-lasku-meikalainen-matti.pdf
@@ -102,8 +102,7 @@ DATA_ROOT/
 
 Tiedostot nimetään muodossa `VVVVKKPP-tyyppi[-lisätieto].ext`.
 - Komennot `lasku`, `pdf` ja `julkaise` käyttävät jakson **loppupäivää** tiedostonimessä.
-- `uusi`-ohjaajan luoma `yleiset`-tiedosto käyttää jakson **loppupäivää**, kuten muutkin tulostetiedostot, eikä siihen lisätä lisätietoa.
-- `uusi`-ohjaajan luoma `osakkaat`-tiedosto käyttää jakson **alkupäivää** eikä siihen lisätä lisätietoa.
+- `uusi`-ohjaajan luomat `yleiset`- ja `osakkaat`-tiedostot käyttävät jakson **loppupäivää**, kuten muutkin tiedostot, eikä niihin lisätä lisätietoa.
 
 | Tiedostotyyppi | Suunta | Kuvaus |
 |----------------|--------|--------|

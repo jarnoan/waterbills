@@ -377,7 +377,7 @@ def run_cycle_wizard(
         pass
 
     if osakkaat_path is None:
-        placeholder = run_dir / f"{cycle.start_date.strftime('%Y%m%d')}-osakkaat.csv"
+        placeholder = run_dir / f"{cycle.end_date.strftime('%Y%m%d')}-osakkaat.csv"
         placeholder.parent.mkdir(parents=True, exist_ok=True)
         with open(placeholder, "w", encoding="utf-8-sig", newline="") as f:
             f.write(_OSAKKAAT_HEADER + "\n")
@@ -391,7 +391,7 @@ def run_cycle_wizard(
         # Give each period its own osakkaat snapshot to edit, instead of
         # editing (or leaving untouched) a file that lives in an older
         # period's folder.
-        copied = run_dir / f"{cycle.start_date.strftime('%Y%m%d')}-osakkaat.csv"
+        copied = run_dir / f"{cycle.end_date.strftime('%Y%m%d')}-osakkaat.csv"
         copied.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(osakkaat_path, copied)
         typer.echo(f"Osakkaat-tiedosto kopioitu edellisestä jaksosta: {copied.name}")
