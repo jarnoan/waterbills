@@ -750,21 +750,23 @@ def run_cycle_wizard(
         bills.extend([prev_bill, new_bill])
         next_number += 2
 
-    typer.echo(
-        f"\n{'Nimi':<30} {'m³':>6} {'Perus':>8} {'Vesi':>8} {'Yhteisk':>8} {'Yhteensä':>10}"
+    header = (
+        f"{'Lasku':>6} {'Nimi':<30} {'m³':>5} {'':1} "
+        f"{'Perus':>8} {'Vesi':>8} {'Yhteisk':>8} {'Yhteensä':>10}"
     )
-    typer.echo("-" * 74)
+    typer.echo(f"\n{header}")
+    typer.echo("-" * len(header))
     for b in sorted(bills, key=lambda x: x.customer_name):
-        est = " (arvio)" if b.is_estimated else ""
+        marker = "A" if b.is_estimated else " "
         typer.echo(
-            f"{b.customer_name:<30} {b.consumption:>6}{est}"
+            f"{b.bill_number:>6} {b.customer_name:<30} {b.consumption:>5} {marker}"
             f" {format_amount_fi(b.basic_fee_share):>8}"
             f" {format_amount_fi(b.water_cost):>8}"
             f" {format_amount_fi(b.shared_expense_share):>8}"
             f" {format_amount_fi(b.total_due):>10}"
         )
     total = sum(b.total_due for b in bills)
-    typer.echo(f"\nLaskuja: {len(bills)}, yhteensä: {format_amount_fi(total)}")
+    typer.echo(f"\nLaskuja: {len(bills)}, yhteensä: {format_amount_fi(total)} (A = kulutus arvioitu)")
 
     laskut_out = output_path(run_dir, cycle.end_date, "laskut", "", "csv")
     write_bills(laskut_out, bills, overwrite=True)
