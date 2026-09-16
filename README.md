@@ -196,6 +196,8 @@ Huom: `eräpäivä` **ei** ole yleiset-avain — se lasketaan automaattisesti `l
 | `päivämäärä` | YYYY-MM-DD | Lukemispäivä |
 | `lukema` | kokonaisluku (m³) | Mittarilukema kuutiometreissä |
 
+**Kulutuksen arviointi:** Jos asiakkaalle ei ole nykyisen jakson lukemaa (esim. mittarille ei päästy), kulutus arvioidaan kahden edellisen jakson lukemien erotuksena — eli edellisen jakson toteutunutta kulutusta käytetään arviona nykyiselle jaksolle. Jos kahta edellistä lukemaa ei löydy, kulutus arvioidaan nollaksi ja asiasta varoitetaan. Arvioidut kulutukset merkitään laskuille ja Vaihe 5:n taulukkoon `A`-merkinnällä (`laskut`-CSV:n `arvio`-sarake). Edelliset lukemat haetaan kaikista laskutusjaksojen kansioista — kaksi tuoreinta jaksoa, jotka edeltävät nykyistä jaksoa, riippumatta siitä montako lukemat-tiedostoa samassa kansiossa on (esim. ensimmäisen jakson `-alkutilanne`-siemenlukema ja sen oma loppulukema lasketaan molemmat mukaan).
+
 ## Ensiajaminen
 
 **Suositeltava tapa:** Käynnistä `laskutus uusi --vuosi VVVV --kuukausi KK` (ensimmäisellä kerralla ei ole edellistä jaksoa, josta oletusarvo voitaisiin päätellä, joten nämä on annettava), joka havaitsee automaattisesti ensimmäisen laskutuskerran ja kerää alkutilanteen mittarilukemat interaktiivisesti. Ohjaaja tallentaa ne tiedostoon `VVVVKKPP-lukemat-alkutilanne.csv` (päivätty yhtä päivää ennen jakson alkua) ja jatkaa suoraan laskujen laskentaan.
