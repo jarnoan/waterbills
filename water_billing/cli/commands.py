@@ -41,6 +41,7 @@ from water_billing.services.billing import (
     next_billing_period,
     split_bills_for_transfer,
 )
+from water_billing.services.portal import fetch_portal_readings
 from water_billing.services.email import email_bill_pdf_paths, send_all_bills, send_summary_email, sort_bill_pdfs_for_print
 from water_billing.services.validation import validate_inputs
 
@@ -410,6 +411,44 @@ def uusi(
         run_dir = run_folder(root, vuosi, kuukausi)
         run_dir.mkdir(parents=True, exist_ok=True)
         run_cycle_wizard(config, run_dir, vuosi, kuukausi)
+    except BillingError as exc:
+        typer.echo(exc.message, err=True)
+        raise typer.Exit(1)
+    except Exception as exc:
+        _handle_unexpected(exc)
+
+
+@app.command("lukemat")
+def lukemat(
+    vuosi: int = typer.Option(date.today().year, "--vuosi", help="Laskutusvuosi"),
+    kuukausi: Optional[int] = typer.Option(
+        None, "--kuukausi", help="Jakson loppukuukausi (1–12, oletus: nykyinen laskutusjakso)"
+    ),
+    data_hakemisto: Optional[Path] = typer.Option(
+        None, "--data-hakemisto", help="Datatiedostojen juurihakemisto"
+    ),
+) -> None:
+    """Hae ja näytä viimeisimmät mittarilukemat Vesitili-portaalista (ei tallenna mitään)."""
+    try:
+        config = load_config(data_hakemisto)
+        root = config.data_root
+        if kuukausi is None:
+            kuukausi = _current_cycle_month(root, vuosi)
+        run_dir = run_folder(root, vuosi, kuukausi)
+
+        general_info = read_general_info(find_all_yleiset(root, run_dir, vuosi))
+        osakkaat_path = find_with_fallback(
+            root, run_dir, vuosi, "osakkaat", general_info.billing_cycle.end_date
+        )
+        customers = read_customers(osakkaat_path)
+
+        typer.echo(f"Osakkaat: {osakkaat_path.name}")
+        readings = fetch_portal_readings(customers, general_info.contact_info, typer.echo)
+        if not readings:
+            typer.echo(
+                "Yhtään lukemaa ei saatu. Tarkista osakkaat-tiedoston sarakkeet "
+                "'asiakasnumero' ja 'kulutuspiste'."
+            )
     except BillingError as exc:
         typer.echo(exc.message, err=True)
         raise typer.Exit(1)

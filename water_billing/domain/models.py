@@ -23,6 +23,7 @@ class Customer:
     bank_account: Optional[str]
     consumption_point: Optional[str]
     print_order: Optional[int]
+    customer_number: Optional[str] = None
 
     def is_active(self) -> bool:
         return bool(self.meter_id.strip())
@@ -54,6 +55,7 @@ class ContactInfo:
     water_price: Optional[Decimal]
     initial_bill_number: Optional[int]
     message: Optional[str] = None
+    main_meter_customer_number: Optional[str] = None
 
 
 @dataclass(frozen=True)

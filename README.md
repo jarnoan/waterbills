@@ -44,7 +44,7 @@ Tarvittavat `.env`-muuttujat:
 1. Päivitä `osakkaat`-CSV tarvittaessa (uudet tai lähteneet osakkaat)
 2. Päivitä `laskurivit`-CSV tarvittaessa (hinnanmuutokset)
 3. Luo tai päivitä `yleiset`-CSV jaksokohtaisilla päivämäärillä
-4. Luo `lukemat`-CSV jaksoa varten (mittarilukemat kullekin asiakkaalle)
+4. Luo `lukemat`-CSV jaksoa varten (mittarilukemat kullekin asiakkaalle; `uusi`-ohjaaja osaa hakea lukemat Vesitili-portaalista, ks. [lukemat](#lukemat))
 5. Aja `laskutus lasku` → luodaan `laskut`-CSV
 6. Tarkista ja tarvittaessa muokkaa `laskut`-CSV
 7. Aja `laskutus pdf` → luodaan PDF-laskut
@@ -63,6 +63,7 @@ Tarvittavat `.env`-muuttujat:
 | `laskutus lasku` | Laskee kulutukset ja kirjoittaa laskut CSV-tiedostoon |
 | `laskutus pdf` | Luo PDF-laskut olemassa olevasta laskut-CSV:stä |
 | `laskutus julkaise` | Lähettää sähköpostit, luo paperilaskut ja lähettää yhteenvedon tilintarkastajalle |
+| `laskutus lukemat` | Hakee ja näyttää viimeisimmät mittarilukemat Vesitili-portaalista (ei tallenna mitään) |
 
 `--kuukausi` ei ole pakollinen millekään komennolle:
 - `laskutus uusi`: oletuksena seuraava kaksikuukautinen jakso edellisen jakson jälkeen (alkaa edellisen jakson päättymispäivää seuraavana päivänä, päättyy toisen kuukauden lopussa). Jos edellinen jakso on vielä kesken (yhteenveto-PDF puuttuu), ohjaaja jatkaa sitä samaa jaksoa sen sijaan, että hyppäisi seuraavaan.
@@ -134,7 +135,8 @@ Tiedostot nimetään muodossa `VVVVKKPP-tyyppi[-lisätieto].ext`.
 | `kiinteistötunnus` | teksti | Kiinteistötunnus |
 | `henkilömäärä` | kokonaisluku | Kiinteistön henkilömäärä |
 | `tilinumero` | teksti | Pankkitilinumero (vain tiedoksi — ei käytetä laskennassa) |
-| `kulutuspiste` | teksti | Kulutuspiste (varattu tulevaa käyttöä varten — ei käytetä laskennassa) |
+| `asiakasnumero` | teksti tai tyhjä | Asiakasnumero Vesitili-portaalissa; käytetään mittarilukeman hakuun portaalista |
+| `kulutuspiste` | teksti tai tyhjä | Käyttöpaikan numero Vesitili-portaalissa; käytetään mittarilukeman hakuun portaalista |
 
 ### laskurivit
 
@@ -182,7 +184,8 @@ Huom: `eräpäivä` **ei** ole yleiset-avain — se lasketaan automaattisesti `l
 | `sähköposti` | teksti | kyllä | Yhteyshenkilön sähköpostiosoite |
 | `päämittarinro` | teksti | kyllä | Päämittarin numero |
 | `rahastonhoitajan_sähköposti` | teksti | kyllä | Rahastonhoitajan sähköposti yhteenvetolaskun lähetystä varten |
-| `päämittarin_kulutuspiste` | teksti | ei | Päämittarin kulutuspisteen tunnus |
+| `päämittarin_asiakasnumero` | teksti | ei | Päämittarin asiakasnumero Vesitili-portaalissa; käytetään päämittarin lukeman hakuun portaalista |
+| `päämittarin_kulutuspiste` | teksti | ei | Päämittarin käyttöpaikan numero Vesitili-portaalissa |
 | `päämittarin_perusmaksu` | desimaaliluku | ei | Päämittarin perusmaksu **yhteensä** euroina ilman ALV:tä; jaetaan tasan aktiivisten asiakkaiden kesken; käytetään oletusarvona laskurivejä luotaessa `uusi`-ohjaajassa |
 | `vesihinta` | desimaaliluku | ei | Vesihinta euroina per kuutiometri ilman ALV:tä; käytetään oletusarvona laskurivejä luotaessa `uusi`-ohjaajassa |
 | `aloituslaskunumero` | kokonaisluku | ei | Ensimmäisen laskun numero osuuskunnan ensimmäisessä laskutusajossa. Ohitetaan automaattisesti, kun aiempia `laskut`-tiedostoja on olemassa — tällöin numerointi jatkuu suurimmasta aiemmasta laskunumerosta + 1. Cascatuu vanhemmista yleiset-tiedostoista, mutta on käytännössä merkityksellinen vain kerran. |
@@ -195,6 +198,8 @@ Huom: `eräpäivä` **ei** ole yleiset-avain — se lasketaan automaattisesti `l
 | `nimi` | teksti | Asiakkaan nimi tai `päämittari` päämittarille |
 | `päivämäärä` | YYYY-MM-DD | Lukemispäivä |
 | `lukema` | kokonaisluku (m³) | Mittarilukema kuutiometreissä |
+
+**Lukemien haku Vesitili-portaalista:** `uusi`-ohjaaja tarjoutuu Vaiheessa 3 hakemaan lukemat osoitteesta <https://vesitili.fi/nokia/portal/> niille osakkaille, joiden `asiakasnumero` ja `kulutuspiste` (käyttöpaikan numero) on täytetty `osakkaat`-tiedostoon, sekä päämittarille, jos `yleiset`-tiedostossa on `päämittarin_asiakasnumero` ja `päämittarin_kulutuspiste`. Työkalu kirjautuu kunkin osakkaan tunnuksilla yksityisasiakkaana, lukee portaalin etusivun edellisen lukeman ja sen ilmoituspäivän ja kirjautuu ulos. Haettu lukema näytetään kysymyksen yhteydessä (`portaali: 1234, 30.08.2026`) ja Enter hyväksyy sen; lukeman päivämääräksi tallennetaan portaalin ilmoituspäivä. Portaali näyttää aina viimeisimmän ilmoitetun lukeman, joten lukema hyväksytään vain, jos sen ilmoituspäivä on uudempi kuin osakkaan edellinen laskutuslukema — muuten osakas ei ole vielä ilmoittanut uutta lukemaa ja lukema kysytään käsin (tai kulutus arvioidaan). Komennolla `laskutus lukemat` haun voi kokeilla tallentamatta mitään.
 
 **Kulutuksen arviointi:** Jos asiakkaalle ei ole nykyisen jakson lukemaa (esim. mittarille ei päästy), kulutus arvioidaan kahden edellisen jakson lukemien erotuksena — eli edellisen jakson toteutunutta kulutusta käytetään arviona nykyiselle jaksolle. Jos kahta edellistä lukemaa ei löydy, kulutus arvioidaan nollaksi ja asiasta varoitetaan. Arvioidut kulutukset merkitään laskuille ja Vaihe 5:n taulukkoon `A`-merkinnällä (`laskut`-CSV:n `arvio`-sarake). Edelliset lukemat haetaan kaikista laskutusjaksojen kansioista — kaksi tuoreinta jaksoa, jotka edeltävät nykyistä jaksoa, riippumatta siitä montako lukemat-tiedostoa samassa kansiossa on (esim. ensimmäisen jakson `-alkutilanne`-siemenlukema ja sen oma loppulukema lasketaan molemmat mukaan).
 

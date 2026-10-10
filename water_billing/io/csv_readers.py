@@ -37,6 +37,7 @@ def read_customers(path: Path) -> List[Customer]:
                 left = date.fromisoformat(row["lähtenyt"].strip())
             bank_account = row.get("tilinumero", "").strip() or None
             consumption_point = row.get("kulutuspiste", "").strip() or None
+            customer_number = (row.get("asiakasnumero") or "").strip() or None
             _print_order_raw = row.get("tulostusjärjestys", "").strip()
             print_order = int(_print_order_raw) if _print_order_raw else None
             customers.append(
@@ -56,6 +57,7 @@ def read_customers(path: Path) -> List[Customer]:
                     bank_account=bank_account,
                     consumption_point=consumption_point,
                     print_order=print_order,
+                    customer_number=customer_number,
                 )
             )
     return customers
@@ -160,6 +162,7 @@ def read_general_info(yleiset_paths: List[Path]) -> GeneralInfo:
         water_price=Decimal(raw_water_price) if raw_water_price else None,
         initial_bill_number=int(raw_initial_bill) if raw_initial_bill else None,
         message=raw_message or None,
+        main_meter_customer_number=merged.get("päämittarin_asiakasnumero", "").strip() or None,
     )
     return GeneralInfo(billing_cycle=cycle, contact_info=contact)
 

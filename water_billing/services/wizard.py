@@ -40,6 +40,7 @@ from water_billing.services.billing import (
     next_billing_period,
     split_bills_for_transfer,
 )
+from water_billing.services.portal import MAIN_METER_NAME, fetch_portal_readings
 from water_billing.services.email import email_bill_pdf_paths, send_all_bills, send_summary_email, sort_bill_pdfs_for_print
 from water_billing.services.validation import validate_inputs
 
@@ -47,11 +48,11 @@ _YLEISET_KEY_ORDER = [
     "jakso_alkaa", "jakso_loppuu", "laskupäivä",
     "osuuskunnan_nimi", "iban", "bic", "osoite", "www", "y_tunnus",
     "yhteyshenkilö", "puhelin", "sähköposti", "päämittarinro",
-    "rahastonhoitajan_sähköposti", "päämittarin_kulutuspiste",
+    "rahastonhoitajan_sähköposti", "päämittarin_asiakasnumero", "päämittarin_kulutuspiste",
     "päämittarin_perusmaksu", "vesihinta", "aloituslaskunumero", "viesti",
 ]
 _OPTIONAL_YLEISET_KEYS = {
-    "laskupäivä", "bic", "osoite", "www", "päämittarin_kulutuspiste",
+    "laskupäivä", "bic", "osoite", "www", "päämittarin_asiakasnumero", "päämittarin_kulutuspiste",
     "päämittarin_perusmaksu", "vesihinta", "aloituslaskunumero", "viesti",
 }
 _REQUIRED_YLEISET_KEYS = [k for k in _YLEISET_KEY_ORDER if k not in _OPTIONAL_YLEISET_KEYS]
@@ -67,7 +68,7 @@ _TOP_SUMMARY_KEYS = _PERIOD_KEYS | {"laskupäivä"}
 
 _OSAKKAAT_HEADER = (
     "nimi,katuosoite,postinumero,postitoimipaikka,sähköposti,puhelin,"
-    "kiinteistötunnus,henkilömäärä,liittynyt,lähtenyt,kulutuspiste,"
+    "kiinteistötunnus,henkilömäärä,liittynyt,lähtenyt,asiakasnumero,kulutuspiste,"
     "mittarinro,laskutustapa,tilinumero"
 )
 
@@ -135,6 +136,12 @@ def _prompt_yleiset_key(key: str, jakso_alkaa_default: str, jakso_loppuu_default
             default="",
         )
         return val.strip() if val.strip() else None
+    elif key == "päämittarin_asiakasnumero":
+        val = typer.prompt(
+            "  Päämittarin asiakasnumero Vesitili-portaalissa (valinnainen, tyhjä = ei määritelty)",
+            default="",
+        )
+        return val.strip() if val.strip() else None
     elif key == "päämittarin_kulutuspiste":
         val = typer.prompt(
             "  Päämittarin kulutuspiste (valinnainen, tyhjä = ei määritelty)", default=""
@@ -188,6 +195,61 @@ def _prompt_yleiset_key(key: str, jakso_alkaa_default: str, jakso_loppuu_default
         while not val.strip():
             val = typer.prompt(f"  Anna arvo avaimelle {key}")
         return val.strip()
+
+
+def _fresh_portal_readings(
+    customers: list,
+    contact_info,
+    prev_readings: List[MeterReading],
+    cycle_start_date: date,
+) -> dict:
+    """Fetch readings from the Vesitili portal and keep only those reported
+    after the previous billing reading — the portal always shows the latest
+    reported reading, which may still be the one already billed."""
+    typer.echo("Haetaan lukemat Vesitili-portaalista...")
+    fetched = fetch_portal_readings(customers, contact_info, typer.echo)
+    prev_date_by_name = {r.customer_name: r.reading_date for r in prev_readings}
+    fresh: dict = {}
+    for name, reading in fetched.items():
+        newer_than = prev_date_by_name.get(name, cycle_start_date - timedelta(days=1))
+        if reading.reading_date > newer_than:
+            fresh[name] = reading
+        else:
+            typer.echo(
+                f"  {name}: portaalin lukema ({format_date_fi(reading.reading_date)}) "
+                "ei ole edellistä laskutuslukemaa uudempi – ei käytetä."
+            )
+    return fresh
+
+
+def _prompt_reading(
+    label: str,
+    name: str,
+    today: date,
+    portal: Optional[MeterReading],
+    existing: Optional[MeterReading] = None,
+    is_update: bool = False,
+) -> Optional[MeterReading]:
+    """Prompt for one meter reading. Enter keeps the existing reading or,
+    when there is none, accepts the one fetched from the portal."""
+    hints = []
+    if existing is not None:
+        hints.append(f"nykyinen: {existing.reading}")
+    elif is_update:
+        hints.append("ei lukemaa")
+    if portal is not None:
+        hints.append(f"portaali: {portal.reading}, {format_date_fi(portal.reading_date)}")
+    prompt = f"  {label} (m³)"
+    if hints:
+        prompt += f" [{'; '.join(hints)}]"
+    val = typer.prompt(prompt, default="", show_default=False)
+    if val.strip():
+        try:
+            return MeterReading(customer_name=name, reading_date=today, reading=int(val.strip()))
+        except ValueError:
+            typer.echo(f"  Varoitus: ei kelvollinen lukema '{val}', ohitetaan.")
+            return None
+    return existing if existing is not None else portal
 
 
 def run_cycle_wizard(
@@ -473,15 +535,39 @@ def run_cycle_wizard(
         candidates.sort(key=lambda p: (parse_date_prefix(p.name) or date.min), reverse=True)
         existing_lukemat_path = candidates[0]
 
+    if prev_lukemat_paths:
+        prev_readings = read_meter_readings(prev_lukemat_paths[0])
+        prev_prev_readings = (
+            read_meter_readings(prev_lukemat_paths[1])
+            if len(prev_lukemat_paths) > 1
+            else []
+        )
+
+    ci = general_info.contact_info
+    portal_available = any(c.customer_number and c.consumption_point for c in active) or bool(
+        ci.main_meter_customer_number and ci.main_meter_consumption_point
+    )
+
+    def _portal_readings() -> dict:
+        if not portal_available or not typer.confirm(
+            "Haetaanko mittarilukemat Vesitili-portaalista?", default=True
+        ):
+            return {}
+        return _fresh_portal_readings(active, ci, prev_readings, cycle_start_date)
+
     if existing_lukemat_path is not None:
         existing_readings = read_meter_readings(existing_lukemat_path)
-        existing_by_name = {r.customer_name: r.reading for r in existing_readings}
+        existing_by_name = {r.customer_name: r for r in existing_readings}
 
         typer.echo(f"\nOlemassa olevat lukemat ({existing_lukemat_path.name}):")
         for c in active:
-            val = existing_by_name.get(c.name, "–")
+            val = existing_by_name[c.name].reading if c.name in existing_by_name else "–"
             typer.echo(f"  {c.name}: {val} m³")
-        main_val = existing_by_name.get("päämittari", "–")
+        main_val = (
+            existing_by_name[MAIN_METER_NAME].reading
+            if MAIN_METER_NAME in existing_by_name
+            else "–"
+        )
         typer.echo(f"  Päämittari: {main_val} m³")
 
         wants_reading_changes = typer.confirm(
@@ -490,47 +576,28 @@ def run_cycle_wizard(
         if not wants_reading_changes:
             meter_readings = existing_readings
         else:
+            portal_readings = _portal_readings()
+            if portal_readings:
+                typer.echo(
+                    "Enter säilyttää nykyisen lukeman tai, jos sitä ei ole, "
+                    "hyväksyy portaalista haetun lukeman."
+                )
             collected: List[MeterReading] = []
             for c in active:
-                current_r = existing_by_name.get(c.name)
-                hint = f"nykyinen: {current_r}" if current_r is not None else "ei lukemaa"
-                val = typer.prompt(f"  Lukema – {c.name} (m³) [{hint}]:", default="")
-                if val.strip():
-                    try:
-                        collected.append(
-                            MeterReading(
-                                customer_name=c.name,
-                                reading_date=today,
-                                reading=int(val.strip()),
-                            )
-                        )
-                    except ValueError:
-                        typer.echo(f"  Varoitus: ei kelvollinen lukema '{val}', ohitetaan.")
-                elif current_r is not None:
-                    # Keep existing reading date from existing file
-                    orig = next(r for r in existing_readings if r.customer_name == c.name)
-                    collected.append(orig)
-
-            current_main = existing_by_name.get("päämittari")
-            hint = f"nykyinen: {current_main}" if current_main is not None else "ei lukemaa"
-            main_val_input = typer.prompt(f"  Päämittarin lukema (m³) [{hint}]:", default="")
-            if main_val_input.strip():
-                try:
-                    collected.append(
-                        MeterReading(
-                            customer_name="päämittari",
-                            reading_date=today,
-                            reading=int(main_val_input.strip()),
-                        )
-                    )
-                except ValueError:
-                    typer.echo("  Varoitus: ei kelvollinen päämittarin lukema, ohitetaan.")
-            elif current_main is not None:
-                orig = next(
-                    (r for r in existing_readings if r.customer_name == "päämittari"), None
+                reading = _prompt_reading(
+                    f"Lukema – {c.name}", c.name, today,
+                    portal_readings.get(c.name), existing_by_name.get(c.name), is_update=True,
                 )
-                if orig:
-                    collected.append(orig)
+                if reading is not None:
+                    collected.append(reading)
+
+            main_reading = _prompt_reading(
+                "Päämittarin lukema", MAIN_METER_NAME, today,
+                portal_readings.get(MAIN_METER_NAME), existing_by_name.get(MAIN_METER_NAME),
+                is_update=True,
+            )
+            if main_reading is not None:
+                collected.append(main_reading)
             else:
                 typer.echo(
                     "Varoitus: päämittarin lukema puuttuu — vesihäviö jää laskematta yhteenvedossa.",
@@ -542,34 +609,23 @@ def run_cycle_wizard(
             typer.echo(f"Lukemat päivitetty: {lukemat_path.name}")
             meter_readings = collected
     else:
+        portal_readings = _portal_readings()
         typer.echo("Syötä mittarilukemat. Paina Enter ohittaaksesi asiakkaan (ei lukemaa tällä jaksolla).")
+        if portal_readings:
+            typer.echo("Jos lukema saatiin portaalista, Enter hyväksyy sen.")
         collected = []
         for c in active:
-            val = typer.prompt(f"  Lukema – {c.name} (m³)", default="")
-            if val.strip():
-                try:
-                    collected.append(
-                        MeterReading(
-                            customer_name=c.name,
-                            reading_date=today,
-                            reading=int(val.strip()),
-                        )
-                    )
-                except ValueError:
-                    typer.echo(f"  Varoitus: ei kelvollinen lukema '{val}', ohitetaan.")
+            reading = _prompt_reading(
+                f"Lukema – {c.name}", c.name, today, portal_readings.get(c.name)
+            )
+            if reading is not None:
+                collected.append(reading)
 
-        main_input = typer.prompt("  Päämittarin lukema (m³)", default="")
-        if main_input.strip():
-            try:
-                collected.append(
-                    MeterReading(
-                        customer_name="päämittari",
-                        reading_date=today,
-                        reading=int(main_input.strip()),
-                    )
-                )
-            except ValueError:
-                typer.echo("  Varoitus: ei kelvollinen päämittarin lukema, ohitetaan.")
+        main_reading = _prompt_reading(
+            "Päämittarin lukema", MAIN_METER_NAME, today, portal_readings.get(MAIN_METER_NAME)
+        )
+        if main_reading is not None:
+            collected.append(main_reading)
         else:
             typer.echo(
                 "Varoitus: päämittarin lukema puuttuu — vesihäviö jää laskematta yhteenvedossa.",
@@ -581,14 +637,6 @@ def run_cycle_wizard(
         typer.echo(f"Lukemat tallennettu: {lukemat_path.name}")
         meter_readings = collected
 
-    if prev_lukemat_paths:
-        prev_readings = read_meter_readings(prev_lukemat_paths[0])
-        prev_prev_readings = (
-            read_meter_readings(prev_lukemat_paths[1])
-            if len(prev_lukemat_paths) > 1
-            else []
-        )
-
     # Phase 4 — laskurivit
     typer.echo("\n--- Vaihe 4: Laskurivit ---")
     laskurivit_path: Optional[Path] = None
@@ -599,7 +647,6 @@ def run_cycle_wizard(
 
     bill_lines_list: List[BillLine] = []
     bill_lines_changed = False
-    ci = general_info.contact_info
 
     if laskurivit_path is None:
         cycle_months = (
