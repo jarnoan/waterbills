@@ -25,7 +25,8 @@ from water_billing.domain.rules import (
     distribute_bill_line,
 )
 from water_billing.encoding.reference_number import compute_reference_number
-from water_billing.io.csv_readers import read_bill_numbers, read_meter_readings
+from water_billing.io.csv_readers import read_bill_numbers, read_bills, read_meter_readings
+from water_billing.io.file_discovery import find_all_laskut, find_lukemats_before, parse_date_prefix
 
 
 def next_billing_period(prev_end_date: date) -> Tuple[date, date]:
@@ -110,18 +111,57 @@ def compute_consumptions(
     return result
 
 
+def find_previous_readings(
+    data_root: Path,
+    current_year: int,
+    before_date: date,
+) -> Tuple[List[MeterReading], List[MeterReading]]:
+    """Return (previous, second previous) reading per customer and main meter.
+
+    Readings are collected per customer from every earlier lukemat file and
+    from earlier bills. A bill's new reading counts as a reading too: when a
+    consumption was estimated, the customer was billed up to that estimated
+    reading and it never appears in any lukemat file, so the next bill must
+    continue from it. Bills win over lukemat rows on the same date, since the
+    laskut CSV may have been corrected by hand.
+    """
+    lukemat_paths = find_lukemats_before(data_root, current_year, before_date)
+    laskut_paths = [
+        p for p in find_all_laskut(data_root)
+        if (parse_date_prefix(p.name) or date.max) < before_date
+    ]
+    if not lukemat_paths and not laskut_paths:
+        raise BillingError("Ei aikaisempia lukematietoja löydy")
+
+    points: Dict[str, Dict[date, int]] = {}
+    for path in lukemat_paths:
+        for r in read_meter_readings(path):
+            points.setdefault(r.customer_name, {})[r.reading_date] = r.reading
+    for path in laskut_paths:
+        for b in read_bills(path):
+            by_date = points.setdefault(b.customer_name, {})
+            by_date[b.prev_reading_date] = b.prev_reading
+            by_date[b.new_reading_date] = b.new_reading
+
+    prev: List[MeterReading] = []
+    prev_prev: List[MeterReading] = []
+    for name, by_date in points.items():
+        dates = sorted(by_date, reverse=True)
+        prev.append(MeterReading(name, dates[0], by_date[dates[0]]))
+        if len(dates) > 1:
+            prev_prev.append(MeterReading(name, dates[1], by_date[dates[1]]))
+    return prev, prev_prev
+
+
 def compute_main_meter_consumption(
     current_readings: List[MeterReading],
-    prev_lukemat_path: Optional[Path],
+    prev_readings: List[MeterReading],
 ) -> Optional[int]:
     current_main = next(
         (r for r in current_readings if r.customer_name == "päämittari"), None
     )
     if current_main is None:
         return None
-    if prev_lukemat_path is None:
-        return None
-    prev_readings = read_meter_readings(prev_lukemat_path)
     prev_main = next(
         (r for r in prev_readings if r.customer_name == "päämittari"), None
     )

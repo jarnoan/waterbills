@@ -35,6 +35,7 @@ from water_billing.services.billing import (
     compute_consumptions,
     compute_main_meter_consumption,
     detect_ownership_transfers,
+    find_previous_readings,
     generate_bills,
     get_next_bill_number,
     next_billing_period,
@@ -536,11 +537,8 @@ def run_cycle_wizard(
         existing_lukemat_path = candidates[0]
 
     if prev_lukemat_paths:
-        prev_readings = read_meter_readings(prev_lukemat_paths[0])
-        prev_prev_readings = (
-            read_meter_readings(prev_lukemat_paths[1])
-            if len(prev_lukemat_paths) > 1
-            else []
+        prev_readings, prev_prev_readings = find_previous_readings(
+            root, year, cycle.start_date
         )
 
     ci = general_info.contact_info
@@ -845,8 +843,7 @@ def run_cycle_wizard(
         pdf_count += 1
 
     customer_total = sum(b.consumption for b in bills)
-    prev_path_for_main = prev_lukemat_paths[0] if prev_lukemat_paths else None
-    main_consumption = compute_main_meter_consumption(meter_readings, prev_path_for_main)
+    main_consumption = compute_main_meter_consumption(meter_readings, prev_readings)
 
     water_loss_m3: Optional[int] = None
     water_loss_pct = None

@@ -111,12 +111,12 @@ def find_all_laskut(data_root: Path) -> List[Path]:
     return result
 
 
-def find_previous_lukemats(
+def find_lukemats_before(
     data_root: Path,
     current_year: int,
-    current_month: int,
     before_date: date,
 ) -> List[Path]:
+    """Every lukemat file dated before ``before_date``, newest first."""
     all_folders = list_run_folders(data_root, current_year) + list_run_folders(
         data_root, current_year - 1
     )
@@ -137,8 +137,16 @@ def find_previous_lukemats(
                 candidates.append((d, p))
 
     candidates.sort(key=lambda x: x[0], reverse=True)
-    result = [p for _, p in candidates[:2]]
+    return [p for _, p in candidates]
 
+
+def find_previous_lukemats(
+    data_root: Path,
+    current_year: int,
+    current_month: int,
+    before_date: date,
+) -> List[Path]:
+    result = find_lukemats_before(data_root, current_year, before_date)[:2]
     if not result:
         raise BillingError("Ei aikaisempia lukematietoja löydy")
     return result

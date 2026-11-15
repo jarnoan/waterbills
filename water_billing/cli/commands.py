@@ -24,7 +24,6 @@ from water_billing.io.csv_writers import write_bills
 from water_billing.io.file_discovery import (
     find_all_laskut,
     find_all_yleiset,
-    find_previous_lukemats,
     find_with_fallback,
     output_path,
     run_folder,
@@ -36,6 +35,7 @@ from water_billing.services.billing import (
     compute_consumptions,
     compute_main_meter_consumption,
     detect_ownership_transfers,
+    find_previous_readings,
     generate_bills,
     get_next_bill_number,
     next_billing_period,
@@ -105,7 +105,9 @@ def lasku(
         meter_readings = read_meter_readings(lukemat_path)
 
         try:
-            prev_lukemat_paths = find_previous_lukemats(root, vuosi, kuukausi, cycle.start_date)
+            prev_readings, prev_prev_readings = find_previous_readings(
+                root, vuosi, cycle.start_date
+            )
         except BillingError:
             raise BillingError(
                 "Ei aikaisempia lukematietoja löydy. Ensimmäisellä laskutuskerralla "
@@ -113,12 +115,6 @@ def lasku(
                 "Luo tiedosto käsin tai käynnistä 'laskutus uusi', joka ohjaa "
                 "alkutietojen syöttämisen läpi."
             )
-        prev_readings = read_meter_readings(prev_lukemat_paths[0])
-        prev_prev_readings = (
-            read_meter_readings(prev_lukemat_paths[1])
-            if len(prev_lukemat_paths) > 1
-            else []
-        )
 
         warnings = validate_inputs(
             customers, bill_lines, general_info, meter_readings,
@@ -287,10 +283,8 @@ def julkaise(
         lukemat_path = find_with_fallback(root, run_dir, vuosi, "lukemat", cycle.end_date)
         meter_readings = read_meter_readings(lukemat_path)
 
-        prev_lukemat_paths = find_previous_lukemats(root, vuosi, kuukausi, cycle.end_date)
-        main_consumption = compute_main_meter_consumption(
-            meter_readings, prev_lukemat_paths[0]
-        )
+        prev_readings, _ = find_previous_readings(root, vuosi, cycle.start_date)
+        main_consumption = compute_main_meter_consumption(meter_readings, prev_readings)
         customer_total = sum(b.consumption for b in bills)
 
         from decimal import Decimal
