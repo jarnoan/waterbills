@@ -283,11 +283,13 @@ def run_cycle_wizard(
     skip_keys: set = set()
     if is_resume:
         # This period's own yleiset already exists (resuming an in-progress
-        # cycle) — keep its jakso_alkaa/jakso_loppuu/laskupäivä like any
-        # other setting.
+        # cycle) — keep its jakso_alkaa/jakso_loppuu like any other setting.
+        # laskupäivä still defaults to today: bills are dated when they are
+        # actually made, and a stored date is easily a stale one carried
+        # over from an earlier period.
         jakso_alkaa_default = resolved.get("jakso_alkaa", "")
         jakso_loppuu_default = resolved.get("jakso_loppuu", "")
-        laskupaiva_default = resolved.get("laskupäivä") or date.today().isoformat()
+        laskupaiva_default = date.today().isoformat()
         other_required_keys = _REQUIRED_YLEISET_KEYS
     else:
         # jakso_alkaa/jakso_loppuu/laskupäivä in `resolved` describe the
@@ -370,8 +372,9 @@ def run_cycle_wizard(
     updated["jakso_loppuu"] = jakso_loppuu_default
     updated["laskupäivä"] = laskupaiva_default
     # A genuinely new cycle always needs its own yleiset file, even if
-    # nothing else changed; resuming only writes one if something did.
-    changed = not is_resume
+    # nothing else changed; resuming only writes one if something did
+    # (including the bill date moving to today).
+    changed = not is_resume or resolved.get("laskupäivä") != laskupaiva_default
 
     # Change loop — only runs if wants_changes, offers every currently
     # known setting (including the period fields set above) for editing.
