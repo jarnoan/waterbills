@@ -126,7 +126,7 @@ def render_bill_pdf(
         "bold_right", fontSize=9, leading=11, fontName="Helvetica-Bold", alignment=TA_RIGHT
     )
     small = ParagraphStyle("small", fontSize=7, leading=9)
-    small_grey = ParagraphStyle("small_grey", fontSize=7, leading=9, textColor=colors.grey)
+    label = ParagraphStyle("label", fontSize=9, leading=11, textColor=colors.black)
     small_italic = ParagraphStyle(
         "small_italic", fontSize=7, leading=9, fontName="Helvetica-Oblique"
     )
@@ -190,7 +190,7 @@ def render_bill_pdf(
     meta_rows.append(["Henkilömäärä", str(customer.number_of_persons)])
 
     meta_data = [
-        [Paragraph(lbl, small_grey), Paragraph(val, normal)] for lbl, val in meta_rows
+        [Paragraph(lbl, label), Paragraph(val, normal)] for lbl, val in meta_rows
     ]
     meta_grid = Table(meta_data, colWidths=[30 * mm, 35 * mm])
     meta_grid.setStyle(TableStyle([
@@ -328,12 +328,12 @@ def render_bill_pdf(
     )
 
     payment_data = [
-        [Paragraph("Saaja", small_grey), Paragraph(ci.cooperative_name, normal)],
-        [Paragraph("Tilinumero (IBAN)", small_grey), Paragraph(iban_val, normal)],
-        [Paragraph("Viitenumero", small_grey), Paragraph(format_reference_number(bill.reference_number), normal)],
-        [Paragraph("Eräpäivä", small_grey), Paragraph(format_date_fi(cycle.due_date), normal)],
-        [Paragraph("Summa", small_grey), Paragraph(format_amount_fi(bill.total_due), bold)],
-        [Paragraph("Virtuaaliviivakoodi", small_grey), Paragraph(virtual_bc, monospace)],
+        [Paragraph("Saaja", label), Paragraph(ci.cooperative_name, normal)],
+        [Paragraph("Tilinumero (IBAN)", label), Paragraph(iban_val, normal)],
+        [Paragraph("Viitenumero", label), Paragraph(format_reference_number(bill.reference_number), normal)],
+        [Paragraph("Eräpäivä", label), Paragraph(format_date_fi(cycle.due_date), normal)],
+        [Paragraph("Summa", label), Paragraph(format_amount_fi(bill.total_due), bold)],
+        [Paragraph("Virtuaaliviivakoodi", label), Paragraph(virtual_bc, monospace)],
     ]
     payment_table = Table(payment_data, colWidths=[40 * mm, usable_w - 40 * mm])
     payment_table.setStyle(TableStyle([
