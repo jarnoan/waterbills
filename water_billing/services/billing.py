@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import calendar
+import dataclasses
 from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
@@ -151,6 +152,57 @@ def find_previous_readings(
         if len(dates) > 1:
             prev_prev.append(MeterReading(name, dates[1], by_date[dates[1]]))
     return prev, prev_prev
+
+
+def distribute_remaining_to_estimates(
+    consumptions: List[CustomerConsumption],
+    main_meter_consumption: Optional[int],
+    other_actual_consumption: int = 0,
+) -> List[CustomerConsumption]:
+    """Re-estimate the estimated consumptions from the main meter.
+
+    The consumption the main meter shows beyond what was actually read
+    (main meter − actual readings − ``other_actual_consumption``, e.g.
+    ownership transfer bills) is divided among the estimated customers in
+    proportion to their previous billed consumption, which is what
+    compute_consumptions put in their ``consumption``. Each estimate is
+    rounded up to a whole cubic metre, so together they may slightly exceed
+    the remaining consumption.
+
+    Without a main meter consumption the estimates are left as they are.
+    """
+    estimated = [i for i, c in enumerate(consumptions) if c.is_estimated]
+    if main_meter_consumption is None or not estimated:
+        return consumptions
+
+    remaining = (
+        main_meter_consumption
+        - sum(c.consumption for c in consumptions if not c.is_estimated)
+        - other_actual_consumption
+    )
+    if remaining < 0:
+        typer.echo(
+            f"Varoitus: todelliset kulutukset ylittävät päämittarin kulutuksen "
+            f"{-remaining} m³:llä — arvioiduille kulutuksille jää 0 m³.",
+            err=True,
+        )
+        remaining = 0
+
+    weights = [max(consumptions[i].consumption, 0) for i in estimated]
+    total_weight = sum(weights)
+    if total_weight == 0:
+        weights = [1] * len(estimated)
+        total_weight = len(estimated)
+
+    shares = [-(-remaining * w // total_weight) for w in weights]
+
+    result = list(consumptions)
+    for i, share in zip(estimated, shares):
+        c = result[i]
+        result[i] = dataclasses.replace(
+            c, consumption=share, new_reading=c.prev_reading + share
+        )
+    return result
 
 
 def compute_main_meter_consumption(

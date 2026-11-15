@@ -35,6 +35,7 @@ from water_billing.services.billing import (
     compute_consumptions,
     compute_main_meter_consumption,
     detect_ownership_transfers,
+    distribute_remaining_to_estimates,
     find_previous_readings,
     generate_bills,
     get_next_bill_number,
@@ -129,6 +130,15 @@ def lasku(
 
         consumptions = compute_consumptions(
             regular_customers, meter_readings, prev_readings, prev_prev_readings, cycle.end_date
+        )
+        consumptions = distribute_remaining_to_estimates(
+            consumptions,
+            compute_main_meter_consumption(meter_readings, prev_readings),
+            sum(
+                t.new_owner_end_reading - t.transfer_reading
+                for t in transfers
+                if t.new_owner_end_reading is not None
+            ),
         )
         all_laskut = find_all_laskut(root)
         start_number = get_next_bill_number(all_laskut, general_info.contact_info.initial_bill_number)
